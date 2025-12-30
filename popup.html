@@ -12,7 +12,7 @@
     }
 
     body {
-      width: 350px;
+      width: 380px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #333;
@@ -20,7 +20,7 @@
 
     .header {
       background: rgba(255, 255, 255, 0.95);
-      padding: 20px;
+      padding: 24px;
       text-align: center;
       border-bottom: 2px solid #667eea;
     }
@@ -38,52 +38,55 @@
 
     .content {
       background: white;
-      padding: 20px;
+      padding: 24px;
     }
 
     .section {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
 
     .section h2 {
       font-size: 16px;
       color: #667eea;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
     .input-group {
-      margin-bottom: 15px;
+      margin-bottom: 16px;
     }
 
     .input-group label {
       display: block;
       font-size: 13px;
       color: #666;
-      margin-bottom: 5px;
+      margin-bottom: 6px;
+      font-weight: 500;
     }
 
     .input-group input {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
       border: 2px solid #e0e0e0;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 14px;
       transition: border-color 0.2s;
+      font-family: 'Courier New', monospace;
     }
 
     .input-group input:focus {
       outline: none;
       border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
     .btn {
       width: 100%;
       padding: 12px;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
@@ -111,11 +114,12 @@
     }
 
     .status {
-      padding: 10px;
-      border-radius: 6px;
+      padding: 12px;
+      border-radius: 8px;
       font-size: 13px;
-      margin-top: 10px;
+      margin-top: 12px;
       display: none;
+      font-weight: 500;
     }
 
     .status.success {
@@ -131,23 +135,38 @@
     }
 
     .info-box {
-      background: #e3f2fd;
+      background: linear-gradient(135deg, #e3f2fd 0%, #e8eaf6 100%);
       border: 1px solid #90caf9;
-      border-radius: 6px;
-      padding: 12px;
+      border-radius: 8px;
+      padding: 14px;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       color: #1565c0;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
     }
 
     .info-box a {
       color: #1565c0;
       text-decoration: underline;
+      font-weight: 600;
+    }
+
+    .info-box code {
+      background: rgba(0, 0, 0, 0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
     }
 
     .footer {
       background: rgba(255, 255, 255, 0.95);
-      padding: 15px;
+      padding: 16px;
       text-align: center;
       font-size: 12px;
       color: #666;
@@ -157,12 +176,41 @@
     .emoji {
       font-size: 18px;
     }
+
+    .steps {
+      list-style: none;
+      counter-reset: step-counter;
+    }
+
+    .steps li {
+      counter-increment: step-counter;
+      margin-bottom: 8px;
+      padding-left: 28px;
+      position: relative;
+    }
+
+    .steps li::before {
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 0;
+      background: #667eea;
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>🎓 Student Buddy</h1>
-    <p class="subtitle">Your AI Coding Mentor</p>
+    <p class="subtitle">Powered by Groq AI</p>
   </div>
 
   <div class="content">
@@ -170,11 +218,11 @@
       <h2><span class="emoji">🔑</span> API Configuration</h2>
       
       <div class="input-group">
-        <label for="apiKey">Gemini API Key</label>
+        <label for="apiKey">Groq API Key</label>
         <input 
           type="password" 
           id="apiKey" 
-          placeholder="Enter your Gemini API key"
+          placeholder="Enter your Groq API key (gsk_...)"
         >
       </div>
 
@@ -182,12 +230,22 @@
       
       <div class="status" id="status"></div>
 
-      <div class="info-box" style="margin-top: 15px;">
-        <strong>📝 How to get your API key:</strong><br>
-        1. Visit <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a><br>
-        2. Click "Get API Key"<br>
-        3. Copy and paste it here<br>
-        <em>Free tier: 60 requests/minute</em>
+      <div class="info-box" style="margin-top: 16px;">
+        <strong>📝 How to get your Groq API key:</strong>
+        <ol class="steps">
+          <li>Visit <a href="https://console.groq.com/keys" target="_blank">Groq Console</a></li>
+          <li>Sign up or log in (free account)</li>
+          <li>Click "Create API Key"</li>
+          <li>Copy the key (starts with <code>gsk_</code>)</li>
+          <li>Paste it above and save</li>
+        </ol>
+        <p style="margin-top: 12px;">
+          <strong>✨ Why Groq?</strong><br>
+          • Blazing fast responses (10x faster)<br>
+          • Free tier with generous limits<br>
+          • More reliable than Gemini<br>
+          • Better at following instructions
+        </p>
       </div>
     </div>
 
@@ -195,11 +253,21 @@
       <h2><span class="emoji">🧹</span> Actions</h2>
       <button class="btn btn-secondary" id="clearHistoryBtn">Clear Conversation History</button>
     </div>
+
+    <div class="section">
+      <h2><span class="emoji">⚡</span> Tips</h2>
+      <div class="info-box">
+        • Share your thinking process for better hints<br>
+        • Use <code>Ctrl+Shift+M</code> to minimize/maximize<br>
+        • Drag the panel anywhere on screen<br>
+        • Try different hint levels for varied guidance
+      </div>
+    </div>
   </div>
 
   <div class="footer">
     Made with ❤️ for learners everywhere<br>
-    <small>v1.0 | MIT License</small>
+    <small>v2.0 | Groq Powered | MIT License</small>
   </div>
 
   <script src="popup.js"></script>

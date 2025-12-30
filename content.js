@@ -3,25 +3,193 @@
 let mentorPanel = null;
 let conversationHistory = [];
 let currentProblem = null;
+let hintsUsed = 0;
+let solutionUnlocked = false;
+let preferredLanguage = 'Python'; // Default
 
 // Initialize the extension
 function init() {
   extractProblemInfo();
+  detectLanguage();
+  startLanguageMonitoring(); // Monitor for language changes
   createMentorPanel();
   setupMessageListener();
 }
 
 // Extract problem details from the page
 function extractProblemInfo() {
+  // Try multiple selectors for title
   const titleElement = document.querySelector('[data-cy="question-title"]') || 
-                       document.querySelector('.text-title-large');
+                       document.querySelector('.text-title-large') ||
+                       document.querySelector('[class*="text-title"]') ||
+                       document.querySelector('div[class*="title"]');
+  
+  // Try multiple selectors for description
   const descElement = document.querySelector('[data-track-load="description_content"]') ||
-                      document.querySelector('.elfjS');
+                      document.querySelector('.elfjS') ||
+                      document.querySelector('[class*="description"]') ||
+                      document.querySelector('.question-content');
+  
+  const title = titleElement?.innerText || 'Unknown Problem';
+  const description = descElement?.innerText || 'No description found';
   
   currentProblem = {
-    title: titleElement?.innerText || 'Unknown Problem',
-    description: descElement?.innerText?.substring(0, 500) || 'No description found'
+    title: title,
+    description: description.substring(0, 1500) // Increased from 500 to 1500
   };
+  
+  console.log('Problem extracted:', currentProblem);
+  
+  return currentProblem;
+}
+
+// Detect the programming language the user is using
+function detectLanguage() {
+  console.log('🔍 Starting language detection...');
+  
+  // Method 1: Check Monaco editor language (most reliable)
+  try {
+    const monacoEditor = document.querySelector('.monaco-editor');
+    if (monacoEditor) {
+      const languageId = monacoEditor.getAttribute('data-mode-id');
+      if (languageId) {
+        const langMap = {
+          'cpp': 'C++',
+          'java': 'Java',
+          'python': 'Python',
+          'javascript': 'JavaScript',
+          'typescript': 'TypeScript',
+          'c': 'C',
+          'csharp': 'C#',
+          'go': 'Go',
+          'ruby': 'Ruby',
+          'swift': 'Swift',
+          'kotlin': 'Kotlin',
+          'rust': 'Rust',
+          'php': 'PHP',
+          'scala': 'Scala'
+        };
+        
+        if (langMap[languageId]) {
+          preferredLanguage = langMap[languageId];
+          console.log('✅ Detected from Monaco editor:', preferredLanguage);
+          return;
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Monaco detection failed:', e);
+  }
+  
+  // Method 2: Check the language button text
+  try {
+    // Try multiple selectors for the language button
+    const languageButton = document.querySelector('button[id^="headlessui-listbox-button"]') ||
+                           document.querySelector('.rounded.items-center.whitespace-nowrap') ||
+                           document.querySelector('button[class*="rounded"][class*="text"]');
+    
+    if (languageButton) {
+      const buttonText = languageButton.innerText || languageButton.textContent;
+      console.log('Language button text:', buttonText);
+      
+      // Direct text matching
+      if (buttonText.includes('C++') || buttonText.includes('Cpp')) {
+        preferredLanguage = 'C++';
+      } else if (buttonText.includes('Java')) {
+        preferredLanguage = 'Java';
+      } else if (buttonText.includes('Python')) {
+        preferredLanguage = 'Python';
+      } else if (buttonText.includes('JavaScript') || buttonText.includes('JS')) {
+        preferredLanguage = 'JavaScript';
+      } else if (buttonText.includes('TypeScript') || buttonText.includes('TS')) {
+        preferredLanguage = 'TypeScript';
+      } else if (buttonText === 'C' || buttonText.includes('C\n')) {
+        preferredLanguage = 'C';
+      } else if (buttonText.includes('C#')) {
+        preferredLanguage = 'C#';
+      } else if (buttonText.includes('Go')) {
+        preferredLanguage = 'Go';
+      } else if (buttonText.includes('Ruby')) {
+        preferredLanguage = 'Ruby';
+      } else if (buttonText.includes('Swift')) {
+        preferredLanguage = 'Swift';
+      } else if (buttonText.includes('Kotlin')) {
+        preferredLanguage = 'Kotlin';
+      } else if (buttonText.includes('Rust')) {
+        preferredLanguage = 'Rust';
+      } else if (buttonText.includes('PHP')) {
+        preferredLanguage = 'PHP';
+      } else if (buttonText.includes('Scala')) {
+        preferredLanguage = 'Scala';
+      }
+      
+      console.log('✅ Detected from button:', preferredLanguage);
+      return;
+    }
+  } catch (e) {
+    console.log('Button detection failed:', e);
+  }
+  
+  // Method 3: Check editor content for language patterns
+  try {
+    const codeLines = document.querySelectorAll('.view-line');
+    if (codeLines.length > 0) {
+      let codeText = '';
+      for (let i = 0; i < Math.min(5, codeLines.length); i++) {
+        codeText += (codeLines[i].innerText || '') + '\n';
+      }
+      
+      console.log('Code sample:', codeText.substring(0, 100));
+      
+      // C++ patterns
+      if (codeText.includes('vector<') || codeText.includes('class Solution {') && codeText.includes('public:') ||
+          codeText.includes('#include') || codeText.includes('std::') || codeText.includes('::')) {
+        preferredLanguage = 'C++';
+      }
+      // Java patterns
+      else if (codeText.includes('public class') || codeText.includes('public int') || 
+               codeText.includes('private ') || codeText.includes('ArrayList')) {
+        preferredLanguage = 'Java';
+      }
+      // Python patterns
+      else if (codeText.includes('def ') || codeText.includes('class Solution:') || 
+               codeText.includes('self,') || codeText.includes('List[')) {
+        preferredLanguage = 'Python';
+      }
+      // JavaScript patterns
+      else if (codeText.includes('var ') || codeText.includes('const ') || 
+               codeText.includes('let ') || codeText.includes('=>') || 
+               codeText.includes('function')) {
+        preferredLanguage = 'JavaScript';
+      }
+      
+      console.log('✅ Detected from code patterns:', preferredLanguage);
+      return;
+    }
+  } catch (e) {
+    console.log('Code pattern detection failed:', e);
+  }
+  
+  console.log('⚠️ Using default language:', preferredLanguage);
+}
+
+// Re-detect language periodically (in case user changes it)
+function startLanguageMonitoring() {
+  // Re-detect every 3 seconds
+  setInterval(() => {
+    const oldLang = preferredLanguage;
+    detectLanguage();
+    
+    if (oldLang !== preferredLanguage) {
+      console.log(`🔄 Language changed: ${oldLang} → ${preferredLanguage}`);
+      
+      // Update badge
+      const languageBadge = document.getElementById('sb-language-text');
+      if (languageBadge) {
+        languageBadge.textContent = preferredLanguage;
+      }
+    }
+  }, 3000);
 }
 
 // Create the floating mentor panel
@@ -55,6 +223,19 @@ function createMentorPanel() {
         <div class="sb-problem-card">
           <div class="sb-problem-label">Problem:</div>
           <div class="sb-problem-title">${currentProblem.title}</div>
+          <div class="sb-language-badge" id="sb-language-badge">
+            <span class="sb-language-icon">💻</span>
+            <span id="sb-language-text">Python</span>
+          </div>
+        </div>
+
+        <div class="sb-progress-tracker" id="sb-progress">
+          <div class="sb-progress-bar">
+            <div class="sb-progress-fill" id="sb-progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="sb-progress-text" id="sb-progress-text">
+            💡 Try hints first to learn better!
+          </div>
         </div>
       </div>
       
@@ -74,6 +255,15 @@ function createMentorPanel() {
             <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
           </div>
           <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+          
+          <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
+            <div class="sb-solution-divider">
+              <span>Still Stuck?</span>
+            </div>
+            <button class="sb-solution-btn" id="sb-solution-btn">
+              🔓 Show Complete Solution
+            </button>
+          </div>
         </div>
       </div>
       
@@ -86,6 +276,12 @@ function createMentorPanel() {
   
   document.body.appendChild(panel);
   mentorPanel = panel;
+  
+  // Update language badge
+  const languageBadge = document.getElementById('sb-language-text');
+  if (languageBadge) {
+    languageBadge.textContent = preferredLanguage;
+  }
   
   // Add event listeners
   setupEventListeners();
@@ -133,6 +329,21 @@ function setupEventListeners() {
   document.querySelectorAll('.sb-hint-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const level = parseInt(e.target.dataset.level);
+      
+      // Visual feedback
+      e.target.style.opacity = '0.5';
+      e.target.style.transform = 'scale(0.95)';
+      setTimeout(() => {
+        e.target.style.opacity = '1';
+        e.target.style.transform = 'scale(1)';
+      }, 200);
+      
+      // Track hint usage and update progress
+      hintsUsed++;
+      console.log('Hints used:', hintsUsed); // Debug log
+      updateProgress();
+      
+      // Send the hint request
       sendThought(level);
     });
   });
@@ -271,7 +482,14 @@ function addMessageToChat(role, message) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `sb-message sb-message-${role}`;
   
-  const icon = role === 'user' ? '👤' : role === 'mentor' ? '🎓' : '⚠️';
+  const icons = {
+    'user': '👤',
+    'mentor': '🎓',
+    'error': '⚠️',
+    'solution': '💡'
+  };
+  
+  const icon = icons[role] || '💬';
   
   msgDiv.innerHTML = `
     <div class="sb-message-icon">${icon}</div>
@@ -283,16 +501,204 @@ function addMessageToChat(role, message) {
 }
 
 function formatMessage(text) {
-  // Basic markdown-like formatting
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br>');
+  // Handle code blocks first
+  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    return `<pre><code class="language-${lang || 'text'}">${escapeHtml(code.trim())}</code></pre>`;
+  });
+  
+  // Handle inline code
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  
+  // Handle bold (for highlighting important terms)
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong class="sb-highlight">$1</strong>');
+  
+  // Handle italic
+  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  // Handle numbered lists (1. 2. 3.)
+  text = text.replace(/^(\d+)\.\s+(.+)$/gm, '<li class="sb-numbered-item"><span class="sb-number">$1</span>$2</li>');
+  
+  // Wrap consecutive numbered items in ol
+  text = text.replace(/(<li class="sb-numbered-item">.*?<\/li>\n?)+/g, match => {
+    return '<ol class="sb-numbered-list">' + match + '</ol>';
+  });
+  
+  // Handle bullet points (• or - at start of line)
+  text = text.replace(/^[•\-]\s+(.+)$/gm, '<li class="sb-bullet-item">$1</li>');
+  
+  // Wrap consecutive bullets in ul
+  text = text.replace(/(<li class="sb-bullet-item">.*?<\/li>\n?)+/g, match => {
+    return '<ul class="sb-bullet-list">' + match + '</ul>';
+  });
+  
+  // Handle line breaks (but not inside lists)
+  text = text.replace(/\n(?![<\/])/g, '<br>');
+  
+  return text;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function showLoading(show) {
   document.getElementById('sb-loading').style.display = show ? 'flex' : 'none';
+}
+
+function updateProgress() {
+  console.log('updateProgress called, hintsUsed:', hintsUsed); // Debug
+  
+  const progressFill = document.getElementById('sb-progress-fill');
+  const progressText = document.getElementById('sb-progress-text');
+  const solutionSection = document.getElementById('sb-solution-section');
+  
+  if (!progressFill || !progressText || !solutionSection) {
+    console.error('Progress elements not found!');
+    return;
+  }
+  
+  // Calculate progress (unlock after 3 hints)
+  const progress = Math.min((hintsUsed / 3) * 100, 100);
+  progressFill.style.width = progress + '%';
+  
+  console.log('Progress:', progress + '%'); // Debug
+  
+  if (hintsUsed === 0) {
+    progressText.textContent = '💡 Try hints first to learn better!';
+  } else if (hintsUsed === 1) {
+    progressText.textContent = '🌱 Good start! Keep trying...';
+    progressFill.style.background = 'linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%)';
+  } else if (hintsUsed === 2) {
+    progressText.textContent = '🔥 You\'re making progress!';
+    progressFill.style.background = 'linear-gradient(90deg, #f97316 0%, #ea580c 100%)';
+  } else if (hintsUsed >= 3 && !solutionUnlocked) {
+    progressText.textContent = '✨ Solution unlocked! You gave it a real try.';
+    progressFill.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+    solutionSection.style.display = 'block';
+    solutionUnlocked = true;
+    
+    console.log('Solution unlocked!'); // Debug
+    
+    // Animate unlock
+    setTimeout(() => {
+      solutionSection.classList.add('sb-solution-unlocked');
+      
+      // CRITICAL: Attach event listener to the now-visible button
+      const solutionBtn = document.getElementById('sb-solution-btn');
+      if (solutionBtn) {
+        console.log('🔧 Attaching solution button listener NOW...');
+        
+        // Remove any existing listeners
+        const newBtn = solutionBtn.cloneNode(true);
+        solutionBtn.parentNode.replaceChild(newBtn, solutionBtn);
+        
+        // Attach fresh listener
+        newBtn.addEventListener('click', (e) => {
+          console.log('🔴 SOLUTION BUTTON CLICKED!');
+          e.preventDefault();
+          e.stopPropagation();
+          showSolution();
+        });
+        
+        console.log('✅ Solution button listener attached successfully');
+      } else {
+        console.error('❌ Solution button STILL not found after unlock!');
+      }
+    }, 100);
+  }
+}
+
+async function showSolution() {
+  console.log('=== SHOW SOLUTION CLICKED ===');
+  
+  const solutionBtn = document.getElementById('sb-solution-btn');
+  
+  if (!solutionBtn) {
+    console.error('Solution button not found!');
+    return;
+  }
+  
+  console.log('Current problem:', currentProblem);
+  
+  if (!currentProblem || !currentProblem.title || currentProblem.title === 'Unknown Problem') {
+    alert('Problem information not found. Please refresh the page and try again.');
+    return;
+  }
+  
+  // Confirm action
+  const confirmed = confirm('Are you sure? It\'s better to keep trying with hints first. Seeing the solution now might prevent you from learning deeply.');
+  
+  if (!confirmed) {
+    console.log('User cancelled solution request');
+    return;
+  }
+  
+  console.log('User confirmed, requesting solution...');
+  
+  // Disable button and show loading
+  solutionBtn.disabled = true;
+  solutionBtn.innerHTML = '⏳ Getting solution...';
+  showLoading(true);
+  
+  try {
+    console.log('Sending message to background script...');
+    
+    // Use a Promise wrapper for better error handling
+          const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: 'getSolution',
+        data: {
+          problem: {
+            title: currentProblem.title,
+            description: currentProblem.description
+          },
+          language: preferredLanguage // Pass detected language
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Runtime error:', chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          console.log('Response received:', response);
+          resolve(response);
+        }
+      });
+    });
+    
+    if (response && response.success) {
+      console.log('✅ Solution successful! Adding to chat...');
+      console.log('Solution length:', response.message?.length);
+      
+      addMessageToChat('solution', response.message);
+      solutionBtn.innerHTML = '✅ Solution Shown';
+      solutionBtn.style.opacity = '0.6';
+      
+      // Scroll to show solution
+      setTimeout(() => {
+        const content = document.getElementById('sb-content');
+        if (content) {
+          content.scrollTop = content.scrollHeight;
+          console.log('Scrolled to bottom');
+        }
+      }, 100);
+    } else {
+      console.error('❌ Solution failed:', response?.error);
+      addMessageToChat('error', response?.error || 'Failed to get solution. Check the Service Worker console.');
+      solutionBtn.disabled = false;
+      solutionBtn.innerHTML = '🔓 Show Complete Solution';
+    }
+  } catch (error) {
+    console.error('❌ Exception caught:', error);
+    console.error('Error stack:', error.stack);
+    addMessageToChat('error', `Error: ${error.message}. Open Service Worker console (chrome://extensions) for details.`);
+    solutionBtn.disabled = false;
+    solutionBtn.innerHTML = '🔓 Show Complete Solution';
+  }
+  
+  showLoading(false);
+  console.log('=== SHOW SOLUTION COMPLETE ===');
 }
 
 function setupMessageListener() {
@@ -300,7 +706,11 @@ function setupMessageListener() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'clearHistory') {
       conversationHistory = [];
+      hintsUsed = 0;
+      solutionUnlocked = false;
       document.getElementById('sb-chat').innerHTML = '';
+      document.getElementById('sb-solution-section').style.display = 'none';
+      updateProgress();
       addMessageToChat('mentor', 'Conversation cleared! Ready for a fresh start? 🚀');
     }
   });
