@@ -47,21 +47,30 @@ function extractProblemInfo() {
 function detectLanguage() {
   console.log('🔍 Starting language detection...');
   
-  // Method 1: Check Monaco editor language (most reliable)
+  // Method 1: Check the actual code editor language via data attributes
   try {
-    const monacoEditor = document.querySelector('.monaco-editor');
-    if (monacoEditor) {
-      const languageId = monacoEditor.getAttribute('data-mode-id');
-      if (languageId) {
+    // Look for language indicators in multiple places
+    const editors = document.querySelectorAll('.monaco-editor, [class*="editor"]');
+    
+    for (const editor of editors) {
+      // Check data-mode-id attribute
+      const modeId = editor.getAttribute('data-mode-id') || 
+                     editor.getAttribute('data-language') ||
+                     editor.querySelector('[data-mode-id]')?.getAttribute('data-mode-id');
+      
+      if (modeId) {
+        console.log('Found data-mode-id:', modeId);
+        
         const langMap = {
           'cpp': 'C++',
+          'c': 'C',
           'java': 'Java',
           'python': 'Python',
           'javascript': 'JavaScript',
           'typescript': 'TypeScript',
-          'c': 'C',
           'csharp': 'C#',
           'go': 'Go',
+          'golang': 'Go',
           'ruby': 'Ruby',
           'swift': 'Swift',
           'kotlin': 'Kotlin',
@@ -70,107 +79,137 @@ function detectLanguage() {
           'scala': 'Scala'
         };
         
-        if (langMap[languageId]) {
-          preferredLanguage = langMap[languageId];
-          console.log('✅ Detected from Monaco editor:', preferredLanguage);
+        if (langMap[modeId.toLowerCase()]) {
+          preferredLanguage = langMap[modeId.toLowerCase()];
+          console.log('✅ Detected from Monaco:', preferredLanguage);
           return;
         }
       }
     }
   } catch (e) {
-    console.log('Monaco detection failed:', e);
+    console.log('Monaco detection error:', e);
   }
   
-  // Method 2: Check the language button text
+  // Method 2: Check the language selector button (improved selectors)
   try {
-    // Try multiple selectors for the language button
-    const languageButton = document.querySelector('button[id^="headlessui-listbox-button"]') ||
-                           document.querySelector('.rounded.items-center.whitespace-nowrap') ||
-                           document.querySelector('button[class*="rounded"][class*="text"]');
+    // Try all possible button selectors
+    const selectors = [
+      'button[id*="headlessui-listbox-button"]',
+      'button[class*="rounded"][class*="items-center"]',
+      'div[class*="text-sm"] button',
+      '.text-label-2.dark\\:text-dark-label-2',
+      '[class*="language"] button'
+    ];
     
-    if (languageButton) {
-      const buttonText = languageButton.innerText || languageButton.textContent;
-      console.log('Language button text:', buttonText);
-      
-      // Direct text matching
-      if (buttonText.includes('C++') || buttonText.includes('Cpp')) {
-        preferredLanguage = 'C++';
-      } else if (buttonText.includes('Java')) {
-        preferredLanguage = 'Java';
-      } else if (buttonText.includes('Python')) {
-        preferredLanguage = 'Python';
-      } else if (buttonText.includes('JavaScript') || buttonText.includes('JS')) {
-        preferredLanguage = 'JavaScript';
-      } else if (buttonText.includes('TypeScript') || buttonText.includes('TS')) {
-        preferredLanguage = 'TypeScript';
-      } else if (buttonText === 'C' || buttonText.includes('C\n')) {
-        preferredLanguage = 'C';
-      } else if (buttonText.includes('C#')) {
-        preferredLanguage = 'C#';
-      } else if (buttonText.includes('Go')) {
-        preferredLanguage = 'Go';
-      } else if (buttonText.includes('Ruby')) {
-        preferredLanguage = 'Ruby';
-      } else if (buttonText.includes('Swift')) {
-        preferredLanguage = 'Swift';
-      } else if (buttonText.includes('Kotlin')) {
-        preferredLanguage = 'Kotlin';
-      } else if (buttonText.includes('Rust')) {
-        preferredLanguage = 'Rust';
-      } else if (buttonText.includes('PHP')) {
-        preferredLanguage = 'PHP';
-      } else if (buttonText.includes('Scala')) {
-        preferredLanguage = 'Scala';
+    for (const selector of selectors) {
+      const button = document.querySelector(selector);
+      if (button) {
+        const text = (button.innerText || button.textContent || '').trim();
+        console.log(`Checking button (${selector}):`, text);
+        
+        // Direct matching with the exact text shown
+        if (text === 'C++' || text.includes('C++')) {
+          preferredLanguage = 'C++';
+          console.log('✅ Detected C++ from button');
+          return;
+        } else if (text === 'C' && !text.includes('++') && !text.includes('#')) {
+          preferredLanguage = 'C';
+          console.log('✅ Detected C from button');
+          return;
+        } else if (text.includes('Java') && !text.includes('JavaScript')) {
+          preferredLanguage = 'Java';
+          console.log('✅ Detected Java from button');
+          return;
+        } else if (text.includes('Python')) {
+          preferredLanguage = 'Python';
+          console.log('✅ Detected Python from button');
+          return;
+        } else if (text.includes('JavaScript') || text === 'JS') {
+          preferredLanguage = 'JavaScript';
+          console.log('✅ Detected JavaScript from button');
+          return;
+        } else if (text.includes('TypeScript') || text === 'TS') {
+          preferredLanguage = 'TypeScript';
+          console.log('✅ Detected TypeScript from button');
+          return;
+        } else if (text.includes('C#')) {
+          preferredLanguage = 'C#';
+          console.log('✅ Detected C# from button');
+          return;
+        } else if (text === 'Go' || text.includes('Golang')) {
+          preferredLanguage = 'Go';
+          console.log('✅ Detected Go from button');
+          return;
+        }
       }
-      
-      console.log('✅ Detected from button:', preferredLanguage);
-      return;
     }
   } catch (e) {
-    console.log('Button detection failed:', e);
+    console.log('Button detection error:', e);
   }
   
-  // Method 3: Check editor content for language patterns
+  // Method 3: Analyze the actual code in the editor
   try {
-    const codeLines = document.querySelectorAll('.view-line');
-    if (codeLines.length > 0) {
-      let codeText = '';
-      for (let i = 0; i < Math.min(5, codeLines.length); i++) {
-        codeText += (codeLines[i].innerText || '') + '\n';
-      }
-      
-      console.log('Code sample:', codeText.substring(0, 100));
-      
-      // C++ patterns
-      if (codeText.includes('vector<') || codeText.includes('class Solution {') && codeText.includes('public:') ||
-          codeText.includes('#include') || codeText.includes('std::') || codeText.includes('::')) {
-        preferredLanguage = 'C++';
-      }
-      // Java patterns
-      else if (codeText.includes('public class') || codeText.includes('public int') || 
-               codeText.includes('private ') || codeText.includes('ArrayList')) {
-        preferredLanguage = 'Java';
-      }
-      // Python patterns
-      else if (codeText.includes('def ') || codeText.includes('class Solution:') || 
-               codeText.includes('self,') || codeText.includes('List[')) {
-        preferredLanguage = 'Python';
-      }
-      // JavaScript patterns
-      else if (codeText.includes('var ') || codeText.includes('const ') || 
-               codeText.includes('let ') || codeText.includes('=>') || 
-               codeText.includes('function')) {
-        preferredLanguage = 'JavaScript';
-      }
-      
-      console.log('✅ Detected from code patterns:', preferredLanguage);
+    let codeText = '';
+    
+    // Try to get code from various editor implementations
+    const codeElements = document.querySelectorAll('.view-line, .view-lines span, [class*="code-line"]');
+    
+    for (let i = 0; i < Math.min(10, codeElements.length); i++) {
+      codeText += (codeElements[i].innerText || codeElements[i].textContent || '') + '\n';
+    }
+    
+    console.log('Code sample (first 200 chars):', codeText.substring(0, 200));
+    
+    // C++ detection patterns (very specific)
+    if (codeText.includes('vector<') || 
+        codeText.includes('#include') || 
+        codeText.includes('std::') ||
+        codeText.includes('unordered_map') ||
+        codeText.includes('public:') ||
+        codeText.match(/class\s+\w+\s*\{[\s\S]*public:/)) {
+      preferredLanguage = 'C++';
+      console.log('✅ Detected C++ from code patterns');
       return;
     }
+    
+    // Java detection patterns
+    if (codeText.includes('public class') || 
+        codeText.includes('public int') ||
+        codeText.includes('private ') ||
+        codeText.includes('ArrayList') ||
+        codeText.includes('HashMap')) {
+      preferredLanguage = 'Java';
+      console.log('✅ Detected Java from code patterns');
+      return;
+    }
+    
+    // Python detection patterns
+    if (codeText.includes('def ') || 
+        codeText.includes('class Solution:') ||
+        codeText.match(/def\s+\w+\(self/) ||
+        codeText.includes('List[') ||
+        codeText.includes('Dict[')) {
+      preferredLanguage = 'Python';
+      console.log('✅ Detected Python from code patterns');
+      return;
+    }
+    
+    // JavaScript detection patterns
+    if (codeText.includes('var ') || 
+        codeText.includes('const ') ||
+        codeText.includes('let ') ||
+        codeText.includes('function(') ||
+        codeText.includes('=>')) {
+      preferredLanguage = 'JavaScript';
+      console.log('✅ Detected JavaScript from code patterns');
+      return;
+    }
+    
   } catch (e) {
-    console.log('Code pattern detection failed:', e);
+    console.log('Code analysis error:', e);
   }
   
-  console.log('⚠️ Using default language:', preferredLanguage);
+  console.log('⚠️ Could not detect language, defaulting to:', preferredLanguage);
 }
 
 // Re-detect language periodically (in case user changes it)
@@ -223,9 +262,27 @@ function createMentorPanel() {
         <div class="sb-problem-card">
           <div class="sb-problem-label">Problem:</div>
           <div class="sb-problem-title">${currentProblem.title}</div>
-          <div class="sb-language-badge" id="sb-language-badge">
-            <span class="sb-language-icon">💻</span>
-            <span id="sb-language-text">Python</span>
+          <div class="sb-language-selector">
+            <div class="sb-language-badge" id="sb-language-badge">
+              <span class="sb-language-icon">💻</span>
+              <span id="sb-language-text">Python</span>
+            </div>
+            <select class="sb-language-dropdown" id="sb-language-dropdown">
+              <option value="C++">C++</option>
+              <option value="Java">Java</option>
+              <option value="Python" selected>Python</option>
+              <option value="JavaScript">JavaScript</option>
+              <option value="TypeScript">TypeScript</option>
+              <option value="C">C</option>
+              <option value="C#">C#</option>
+              <option value="Go">Go</option>
+              <option value="Ruby">Ruby</option>
+              <option value="Swift">Swift</option>
+              <option value="Kotlin">Kotlin</option>
+              <option value="Rust">Rust</option>
+              <option value="PHP">PHP</option>
+              <option value="Scala">Scala</option>
+            </select>
           </div>
         </div>
 
@@ -277,10 +334,23 @@ function createMentorPanel() {
   document.body.appendChild(panel);
   mentorPanel = panel;
   
-  // Update language badge
+  // Update language badge and dropdown
   const languageBadge = document.getElementById('sb-language-text');
+  const languageDropdown = document.getElementById('sb-language-dropdown');
+  
   if (languageBadge) {
     languageBadge.textContent = preferredLanguage;
+  }
+  
+  if (languageDropdown) {
+    languageDropdown.value = preferredLanguage;
+    
+    // Listen for manual language changes
+    languageDropdown.addEventListener('change', (e) => {
+      preferredLanguage = e.target.value;
+      languageBadge.textContent = preferredLanguage;
+      console.log('🔄 Language manually changed to:', preferredLanguage);
+    });
   }
   
   // Add event listeners

@@ -224,25 +224,65 @@
   font-weight: 600;
   color: #e2e8f0;
   line-height: 1.4;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.sb-language-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .sb-language-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: rgba(100, 255, 218, 0.1);
+  padding: 6px 12px;
+  background: rgba(100, 255, 218, 0.15);
   border: 1px solid rgba(100, 255, 218, 0.3);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
   color: #64ffda;
   font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 10px rgba(100, 255, 218, 0.2);
 }
 
 .sb-language-icon {
-  font-size: 14px;
+  font-size: 16px;
+}
+
+.sb-language-dropdown {
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(100, 255, 218, 0.3);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.sb-language-dropdown:hover {
+  border-color: #64ffda;
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.sb-language-dropdown:focus {
+  border-color: #64ffda;
+  box-shadow: 0 0 0 2px rgba(100, 255, 218, 0.2);
+}
+
+.sb-language-dropdown option {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 4px;
 }
 
 /* Progress Tracker */

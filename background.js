@@ -201,33 +201,45 @@ async function handleSolutionRequest(data) {
   const messages = [
     {
       role: 'system',
-      content: `You are an expert LeetCode instructor. Provide COMPLETE, WORKING solutions in ${targetLanguage}.
+      content: `You are an expert LeetCode instructor. 
+
+CRITICAL REQUIREMENTS:
+1. The solution code MUST be in ${targetLanguage} - NO OTHER LANGUAGE
+2. If the user selected ${targetLanguage}, you MUST write code in ${targetLanguage}
+3. Do NOT provide Python code if ${targetLanguage} is C++
+4. Do NOT provide C++ code if ${targetLanguage} is Java
+5. The code language MUST match: ${targetLanguage}
 
 MANDATORY FORMAT:
-1. Start with "## Approach" - explain the strategy in 2-3 sentences
-2. Then "## Solution Code" - provide COMPLETE working code with detailed comments IN ${targetLanguage}
-3. Then "## Complexity" - time and space analysis
-4. Then "## Key Insights" - why this solution works
+## Approach
+Brief 2-3 sentence explanation
 
-The code MUST:
-- Be in ${targetLanguage} specifically
-- Be complete and directly runnable
-- Include all necessary imports/headers
-- Have detailed inline comments
-- Use optimal time/space complexity
-- Follow LeetCode submission format for ${targetLanguage}
+## Solution Code (${targetLanguage})
+\`\`\`${targetLanguage.toLowerCase()}
+[Complete ${targetLanguage} code here]
+\`\`\`
 
-CRITICAL: The solution MUST be in ${targetLanguage}, not any other language.`
+## Complexity
+Time: O(...)
+Space: O(...)
+
+## Key Insights
+• Key point 1
+• Key point 2
+
+The solution MUST be in ${targetLanguage}. This is critical.`
     },
     {
       role: 'user',
-      content: `Solve this LeetCode problem in ${targetLanguage}:
+      content: `IMPORTANT: Write the solution in ${targetLanguage} ONLY.
 
-**${problem.title}**
+Problem: ${problem.title}
 
 ${problem.description}
 
-Provide a COMPLETE solution in ${targetLanguage} following the mandatory format. The code must be ready to copy-paste into LeetCode and must be written in ${targetLanguage}.`
+Provide a COMPLETE solution in ${targetLanguage} (NOT Python, NOT any other language, ONLY ${targetLanguage}).
+
+The code must be in ${targetLanguage} and follow ${targetLanguage} syntax exactly.`
     }
   ];
   
