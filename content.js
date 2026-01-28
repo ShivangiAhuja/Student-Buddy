@@ -6,12 +6,14 @@ let currentProblem = null;
 let hintsUsed = 0;
 let solutionUnlocked = false;
 let preferredLanguage = 'Python'; // Default
-
+let currentCodeTemplate = ''; // Store the LeetCode template
+let lastSolutionCode = ''; // Store last solution for corrections
 // Initialize the extension
 function init() {
   extractProblemInfo();
   detectLanguage();
-  startLanguageMonitoring(); // Monitor for language changes
+  extractCodeTemplate();
+  startLanguageMonitoring();
   createMentorPanel();
   setupMessageListener();
 }
@@ -42,7 +44,41 @@ function extractProblemInfo() {
   
   return currentProblem;
 }
-
+// NEW: Extract the code template from LeetCode editor
+function extractCodeTemplate() {
+  try {
+    // Wait a bit for editor to load
+    setTimeout(() => {
+      // Try to get code from Monaco editor
+      const editorContent = document.querySelector('.monaco-editor');
+      if (editorContent) {
+        // Try to get the actual text content
+        const lines = editorContent.querySelectorAll('.view-line');
+        if (lines.length > 0) {
+          currentCodeTemplate = Array.from(lines)
+            .map(line => line.textContent)
+            .join('\n')
+            .trim();
+          
+          console.log('Extracted code template:', currentCodeTemplate);
+        }
+      }
+      
+      // Alternative: Try to get from textarea or other elements
+      if (!currentCodeTemplate) {
+        const codeAreas = document.querySelectorAll('textarea[class*="code"], div[class*="code-editor"]');
+        for (const area of codeAreas) {
+          if (area.value || area.textContent) {
+            currentCodeTemplate = area.value || area.textContent;
+            break;
+          }
+        }
+      }
+    }, 2000);
+  } catch (error) {
+    console.error('Error extracting code template:', error);
+  }
+}
 // Detect the programming language the user is using
 function detectLanguage() {
   console.log('🔍 Starting language detection...');
@@ -547,28 +583,100 @@ async function sendThought(hintLevel) {
   showLoading(false);
 }
 
-function addMessageToChat(role, message) {
-  const chat = document.getElementById('sb-chat');
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `sb-message sb-message-${role}`;
+// IMPROVED: Add messages with optional correction buttons
+function addMessageToChat(role, message, allowCorrection = false) {
+  const content = document.getElementById('sb-content');
+  if (!content) return;
   
-  const icons = {
-    'user': '👤',
-    'mentor': '🎓',
-    'error': '⚠️',
-    'solution': '💡'
-  };
+  // Remove welcome message
+  const welcome = content.querySelector('.sb-welcome-message');
+  if (welcome) {
+    welcome.remove();
+  }
   
-  const icon = icons[role] || '💬';
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `sb-message sb-message-${role}`;
   
-  msgDiv.innerHTML = `
-    <div class="sb-message-icon">${icon}</div>
-    <div class="sb-message-content">${formatMessage(message)}</div>
+  // Format message with markdown-like code blocks
+  const formattedMessage = formatMessage(message);
+  
+  messageDiv.innerHTML = `
+    <div class="sb-message-content">
+      ${formattedMessage}
+    </div>
   `;
   
-  chat.appendChild(msgDiv);
-  chat.scrollTop = chat.scrollHeight;
+  // Add correction buttons for solution messages
+  if (allowCorrection && role === 'solution') {
+    const actionDiv = document.createElement('div');
+    actionDiv.className = 'sb-solution-actions';
+    actionDiv.innerHTML = `
+      <button class="sb-action-btn sb-wrong-btn" onclick="requestCorrection()">
+        ❌ Wrong Answer - Get Correction
+      </button>
+      <button class="sb-action-btn sb-describe-btn" onclick="requestCorrectionWithDetails()">
+        📝 Describe the Issue
+      </button>
+    `;
+    messageDiv.appendChild(actionDiv);
+  }
+  
+  content.appendChild(messageDiv);
+  content.scrollTop = content.scrollHeight;
 }
+
+function formatMessage(message) {
+  // Handle code blocks
+  let formatted = message.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    return `<div class="sb-code-block">
+      <div class="sb-code-header">
+        <span class="sb-code-lang">${lang || 'code'}</span>
+        <button class="sb-copy-btn" onclick="copyCode(this)" title="Copy code">📋 Copy</button>
+      </div>
+      <pre><code>${escapeHtml(code.trim())}</code></pre>
+    </div>`;
+  });
+  
+  // Handle inline code
+  formatted = formatted.replace(/`([^`]+)`/g, '<code class="sb-inline-code">$1</code>');
+  
+  // Handle bold
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // Handle headers
+  formatted = formatted.replace(/^##\s+(.+)$/gm, '<h3 class="sb-heading">$1</h3>');
+  
+  // Handle bullet points
+  formatted = formatted.replace(/^•\s+(.+)$/gm, '<li>$1</li>');
+  formatted = formatted.replace(/(<li>.*<\/li>)+/g, '<ul class="sb-list">$&</ul>');
+  
+  // Handle line breaks
+  formatted = formatted.replace(/\n/g, '<br>');
+  
+  return formatted;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Copy code to clipboard
+window.copyCode = function(button) {
+  const codeBlock = button.closest('.sb-code-block');
+  const code = codeBlock.querySelector('code').textContent;
+  
+  navigator.clipboard.writeText(code).then(() => {
+    button.textContent = '✅ Copied!';
+    setTimeout(() => {
+      button.textContent = '📋 Copy';
+    }, 2000);
+  }).catch(err => {
+    console.error('Copy failed:', err);
+    button.textContent = '❌ Failed';
+  });
+};
 
 function formatMessage(text) {
   // Handle code blocks first
@@ -684,92 +792,136 @@ async function showSolution() {
   console.log('=== SHOW SOLUTION CLICKED ===');
   
   const solutionBtn = document.getElementById('sb-solution-btn');
-  
-  if (!solutionBtn) {
-    console.error('Solution button not found!');
-    return;
-  }
-  
-  console.log('Current problem:', currentProblem);
+  if (!solutionBtn) return;
   
   if (!currentProblem || !currentProblem.title || currentProblem.title === 'Unknown Problem') {
-    alert('Problem information not found. Please refresh the page and try again.');
+    alert('Problem information not found. Please refresh the page.');
     return;
   }
   
-  // Confirm action
-  const confirmed = confirm('Are you sure? It\'s better to keep trying with hints first. Seeing the solution now might prevent you from learning deeply.');
+  const confirmed = confirm('Are you sure? It\'s better to keep trying with hints first.');
+  if (!confirmed) return;
   
-  if (!confirmed) {
-    console.log('User cancelled solution request');
-    return;
-  }
-  
-  console.log('User confirmed, requesting solution...');
-  
-  // Disable button and show loading
   solutionBtn.disabled = true;
   solutionBtn.innerHTML = '⏳ Getting solution...';
   showLoading(true);
   
   try {
-    console.log('Sending message to background script...');
+    // Re-extract code template to get latest
+    extractCodeTemplate();
     
-    // Use a Promise wrapper for better error handling
-          const response = await new Promise((resolve, reject) => {
+    const response = await new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({
         action: 'getSolution',
         data: {
-          problem: {
-            title: currentProblem.title,
-            description: currentProblem.description
-          },
-          language: preferredLanguage // Pass detected language
+          problem: currentProblem,
+          language: preferredLanguage,
+          codeTemplate: currentCodeTemplate // Pass the template
         }
       }, (response) => {
         if (chrome.runtime.lastError) {
-          console.error('Runtime error:', chrome.runtime.lastError);
           reject(new Error(chrome.runtime.lastError.message));
         } else {
-          console.log('Response received:', response);
           resolve(response);
         }
       });
     });
     
     if (response && response.success) {
-      console.log('✅ Solution successful! Adding to chat...');
-      console.log('Solution length:', response.message?.length);
-      
-      addMessageToChat('solution', response.message);
+      lastSolutionCode = response.message; // Store for potential correction
+      addMessageToChat('solution', response.message, true); // true = add correction buttons
       solutionBtn.innerHTML = '✅ Solution Shown';
       solutionBtn.style.opacity = '0.6';
       
-      // Scroll to show solution
       setTimeout(() => {
         const content = document.getElementById('sb-content');
         if (content) {
           content.scrollTop = content.scrollHeight;
-          console.log('Scrolled to bottom');
         }
       }, 100);
     } else {
-      console.error('❌ Solution failed:', response?.error);
-      addMessageToChat('error', response?.error || 'Failed to get solution. Check the Service Worker console.');
+      addMessageToChat('error', response?.error || 'Failed to get solution');
       solutionBtn.disabled = false;
-      solutionBtn.innerHTML = '🔓 Show Complete Solution';
+      solutionBtn.innerHTML = 'Show Complete Solution';
     }
   } catch (error) {
-    console.error('❌ Exception caught:', error);
-    console.error('Error stack:', error.stack);
-    addMessageToChat('error', `Error: ${error.message}. Open Service Worker console (chrome://extensions) for details.`);
+    console.error('Solution error:', error);
+    addMessageToChat('error', `Error: ${error.message}`);
     solutionBtn.disabled = false;
-    solutionBtn.innerHTML = '🔓 Show Complete Solution';
+    solutionBtn.innerHTML = 'Show Complete Solution';
   }
   
   showLoading(false);
-  console.log('=== SHOW SOLUTION COMPLETE ===');
 }
+
+// NEW: Request corrected solution
+async function requestCorrection(errorMessage = '') {
+  console.log('=== REQUESTING CORRECTION ===');
+  
+  showLoading(true);
+  
+  // Add user feedback to chat
+  if (errorMessage) {
+    addMessageToChat('user', `The previous solution is incorrect. ${errorMessage}`);
+  } else {
+    addMessageToChat('user', 'The previous solution is incorrect. Please provide a corrected solution.');
+  }
+  
+  try {
+    extractCodeTemplate(); // Get latest template
+    
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: 'correctSolution',
+        data: {
+          problem: currentProblem,
+          language: preferredLanguage,
+          previousSolution: lastSolutionCode,
+          errorMessage: errorMessage,
+          codeTemplate: currentCodeTemplate
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+    
+    if (response && response.success) {
+      lastSolutionCode = response.message; // Update with corrected solution
+      addMessageToChat('solution', response.message, true); // Add with correction buttons
+      
+      setTimeout(() => {
+        const content = document.getElementById('sb-content');
+        if (content) {
+          content.scrollTop = content.scrollHeight;
+        }
+      }, 100);
+    } else {
+      addMessageToChat('error', response?.error || 'Failed to get correction');
+    }
+  } catch (error) {
+    console.error('Correction error:', error);
+    addMessageToChat('error', `Error: ${error.message}`);
+  }
+  
+  showLoading(false);
+}
+
+// NEW: Request correction with custom error description
+function requestCorrectionWithDetails() {
+  const errorDesc = prompt('Please describe what\'s wrong with the solution (e.g., "fails for edge case", "wrong output for example 2"):');
+  if (errorDesc) {
+    requestCorrection(errorDesc);
+  }
+}
+
+// Make functions globally available
+window.requestCorrection = requestCorrection;
+window.requestCorrectionWithDetails = requestCorrectionWithDetails;
+
 
 function setupMessageListener() {
   // Listen for messages from popup or background

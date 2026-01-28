@@ -1,4 +1,4 @@
-// background.js - Handles API calls to Groq
+// background.js - Handles API calls to Groq with improved LeetCode solution format
 
 const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -24,13 +24,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Error in handler:', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Keep channel open for async response
+    return true;
   }
   
   if (request.action === 'getSolution') {
     console.log('getSolution action received in background');
-    console.log('Problem data:', request.data);
-    
     handleSolutionRequest(request.data)
       .then(response => {
         console.log('Sending solution response:', response);
@@ -42,12 +40,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true;
   }
+  
+  // NEW: Handle correction requests
+  if (request.action === 'correctSolution') {
+    console.log('correctSolution action received');
+    handleCorrectionRequest(request.data)
+      .then(response => {
+        console.log('Sending correction response:', response);
+        sendResponse(response);
+      })
+      .catch(error => {
+        console.error('Error in correction handler:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
+  }
 });
 
 async function handleMentorRequest(data) {
   const { problem, userThought, hintLevel, history } = data;
   
-  // Get API key from storage
   const result = await chrome.storage.sync.get(['apiKey']);
   const apiKey = result.apiKey;
   
@@ -58,12 +70,10 @@ async function handleMentorRequest(data) {
     };
   }
   
-  // Build the conversation messages
   const messages = buildMessages(problem, userThought, hintLevel, history);
   
   try {
     console.log('Sending request to Groq API...');
-    console.log('Messages:', messages);
     
     const response = await fetch(GROQ_API_ENDPOINT, {
       method: 'POST',
@@ -72,7 +82,7 @@ async function handleMentorRequest(data) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile', // Fast and powerful model
+        model: 'llama-3.3-70b-versatile',
         messages: messages,
         temperature: 0.7,
         max_tokens: 1024,
@@ -83,23 +93,14 @@ async function handleMentorRequest(data) {
     
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Groq API Error Response:', errorData);
       throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
     }
     
     const responseData = await response.json();
-    console.log('Full Groq API Response:', responseData);
-    
-    // Extract the message from Groq's response format
-    if (!responseData.choices || responseData.choices.length === 0) {
-      console.error('Unexpected API response:', responseData);
-      throw new Error('No response from AI. Please try again.');
-    }
-    
     const mentorMessage = responseData.choices[0].message.content;
     
     if (!mentorMessage || mentorMessage.trim() === '') {
-      throw new Error('AI response was empty. Please try rephrasing your question.');
+      throw new Error('AI response was empty. Please try again.');
     }
     
     return {
@@ -109,7 +110,6 @@ async function handleMentorRequest(data) {
     
   } catch (error) {
     console.error('Groq API Error:', error);
-    console.error('Full error details:', error.stack);
     return {
       success: false,
       error: `API Error: ${error.message}`
@@ -121,7 +121,6 @@ function buildMessages(problem, userThought, hintLevel, history) {
   const systemPrompt = buildSystemPrompt(hintLevel);
   const userPrompt = buildUserPrompt(problem, userThought, hintLevel);
   
-  // Build messages in OpenAI format (Groq uses same format)
   const messages = [
     {
       role: 'system',
@@ -148,99 +147,120 @@ Guidelines:
 - Be encouraging and supportive
 - Never provide complete code solutions`;
 
-  const levelPrompts = {
-    0: '\n\nThe student is sharing their thoughts. Respond to what they said with encouragement or a guiding question.',
-    1: '\n\nHINT LEVEL 1 (Gentle): Give a gentle nudge. Ask a question that helps them think about the problem differently. Example: "What data structure allows fast lookups?"',
-    2: '\n\nHINT LEVEL 2 (Stronger): Provide a clearer hint about the approach or pattern, but still no complete solution. Example: "Consider using a hash map to store values as you iterate."',
-    3: '\n\nHINT LEVEL 3 (Direct): Give a direct pointer toward the solution approach without giving the full answer. Example: "Use a hash map to check if the complement (target - current) exists."'
-  };
-
-  return basePrompt + (levelPrompts[hintLevel] || levelPrompts[0]);
+  if (hintLevel === 1) {
+    return basePrompt + '\n\nProvide a GENTLE hint - just a nudge in the right direction.';
+  } else if (hintLevel === 2) {
+    return basePrompt + '\n\nProvide a MEDIUM hint - mention the approach or algorithm that could work.';
+  } else if (hintLevel === 3) {
+    return basePrompt + '\n\nProvide a STRONG hint - describe the solution approach in detail without code.';
+  }
+  
+  return basePrompt;
 }
 
 function buildUserPrompt(problem, userThought, hintLevel) {
-  let prompt = `Problem: ${problem.title}\n\n`;
+  let prompt = `Problem: ${problem.title}\n\n${problem.description}\n\n`;
   
-  // Include first 400 chars of description
-  const shortDesc = problem.description.substring(0, 400);
-  prompt += `Description: ${shortDesc}${problem.description.length > 400 ? '...' : ''}\n\n`;
+  if (userThought) {
+    prompt += `Student's thought: ${userThought}\n\n`;
+  }
   
-  if (userThought && userThought.trim()) {
-    prompt += `Student says: "${userThought}"\n\n`;
-    prompt += `Please respond as their tutor to guide their thinking.`;
-  } else {
-    prompt += `The student is asking for a hint (level ${hintLevel}) but hasn't shared their thoughts yet.\n\n`;
-    prompt += `Please provide a helpful hint and gently encourage them to share their thinking process.`;
+  if (hintLevel > 0) {
+    prompt += `The student is requesting a hint (level ${hintLevel}).`;
   }
   
   return prompt;
 }
 
+// IMPROVED: Better solution request handler with LeetCode format preservation
 async function handleSolutionRequest(data) {
-  const { problem, language } = data;
+  const { problem, language, codeTemplate } = data;
   
   console.log('handleSolutionRequest called with problem:', problem);
   console.log('Requested language:', language || 'Python (default)');
+  console.log('Code template:', codeTemplate);
   
-  // Get API key from storage
   const result = await chrome.storage.sync.get(['apiKey']);
   const apiKey = result.apiKey;
   
   if (!apiKey) {
-    console.error('No API key found');
     return {
       success: false,
       error: 'Please set your Groq API key in the extension settings'
     };
   }
   
-  console.log('API key found, preparing solution request');
-  
   const targetLanguage = language || 'Python';
   
-  const messages = [
-    {
-      role: 'system',
-      content: `You are an expert LeetCode instructor. 
+  // Build improved system prompt
+  const systemPrompt = `You are an expert LeetCode solution provider.
 
-CRITICAL REQUIREMENTS:
-1. The solution code MUST be in ${targetLanguage} - NO OTHER LANGUAGE
-2. If the user selected ${targetLanguage}, you MUST write code in ${targetLanguage}
-3. Do NOT provide Python code if ${targetLanguage} is C++
-4. Do NOT provide C++ code if ${targetLanguage} is Java
-5. The code language MUST match: ${targetLanguage}
+CRITICAL RULES FOR LEETCODE FORMAT:
+1. When given a class/function template (e.g., "class Solution { public: int func() {} }"), you MUST complete ONLY the function body inside the existing structure
+2. NEVER rewrite the entire class from scratch
+3. NEVER add extra #include statements, namespace declarations, or main() functions unless they were in the original template
+4. Preserve the EXACT function signature, class name, and structure
+5. Only fill in the implementation between the curly braces {}
 
-MANDATORY FORMAT:
+CODE LANGUAGE:
+- The solution MUST be in ${targetLanguage} - NO exceptions
+- If C++ is selected, use C++ syntax (vectors, iterators, etc.)
+- If Java is selected, use Java syntax (ArrayList, Collections, etc.)
+- If Python is selected, use Python syntax (lists, comprehensions, etc.)
+
+RESPONSE FORMAT:
 ## Approach
-Brief 2-3 sentence explanation
+[2-3 sentence explanation of the algorithm/approach]
 
 ## Solution Code (${targetLanguage})
 \`\`\`${targetLanguage.toLowerCase()}
-[Complete ${targetLanguage} code here]
+[Complete the function body ONLY - keep the class structure intact]
 \`\`\`
 
-## Complexity
-Time: O(...)
-Space: O(...)
+## Complexity Analysis
+Time Complexity: O(...)
+Space Complexity: O(...)
 
 ## Key Insights
-• Key point 1
-• Key point 2
+- [Important point 1]
+- [Important point 2]
+- [Edge cases handled]
 
-The solution MUST be in ${targetLanguage}. This is critical.`
-    },
-    {
-      role: 'user',
-      content: `IMPORTANT: Write the solution in ${targetLanguage} ONLY.
+EXAMPLES:
+If given "class Solution { public: int foo() {} }", return:
+\`\`\`cpp
+class Solution {
+public:
+    int foo() {
+        // Your implementation here
+        return result;
+    }
+};
+\`\`\`
 
-Problem: ${problem.title}
+NOT standalone functions, NOT separate helper files.`;
 
+  const userPrompt = `Problem: ${problem.title}
+
+Description:
 ${problem.description}
 
-Provide a COMPLETE solution in ${targetLanguage} (NOT Python, NOT any other language, ONLY ${targetLanguage}).
+${codeTemplate ? `
+IMPORTANT - Complete this EXACT template structure:
+\`\`\`
+${codeTemplate}
+\`\`\`
 
-The code must be in ${targetLanguage} and follow ${targetLanguage} syntax exactly.`
-    }
+Fill in the function body while preserving the class structure, function signature, and format.
+` : `Provide a complete solution in ${targetLanguage}.`}
+
+Language Required: ${targetLanguage}
+
+Remember: Complete the function body inside the existing class structure. Do not rewrite the entire structure.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
   ];
   
   try {
@@ -255,31 +275,20 @@ The code must be in ${targetLanguage} and follow ${targetLanguage} syntax exactl
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: messages,
-        temperature: 0.1, // Very low for consistent, accurate code
-        max_tokens: 4000, // More tokens for complete explanation
+        temperature: 0.1,
+        max_tokens: 4000,
         top_p: 0.95,
         stream: false
       })
     });
     
-    console.log('API response status:', response.status);
-    
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Groq API Error Response:', errorData);
-      throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
+      throw new Error(errorData.error?.message || `API request failed`);
     }
     
     const responseData = await response.json();
-    console.log('Solution received, length:', responseData.choices[0]?.message?.content?.length);
-    
-    if (!responseData.choices || responseData.choices.length === 0) {
-      throw new Error('No solution received from AI');
-    }
-    
     const solution = responseData.choices[0].message.content;
-    
-    console.log('Returning successful solution');
     
     return {
       success: true,
@@ -291,6 +300,119 @@ The code must be in ${targetLanguage} and follow ${targetLanguage} syntax exactl
     return {
       success: false,
       error: `Failed to get solution: ${error.message}`
+    };
+  }
+}
+
+// NEW: Handle correction requests when solution is wrong
+async function handleCorrectionRequest(data) {
+  const { problem, language, previousSolution, errorMessage, codeTemplate } = data;
+  
+  console.log('handleCorrectionRequest called');
+  console.log('Previous solution had error:', errorMessage);
+  
+  const result = await chrome.storage.sync.get(['apiKey']);
+  const apiKey = result.apiKey;
+  
+  if (!apiKey) {
+    return {
+      success: false,
+      error: 'Please set your Groq API key in the extension settings'
+    };
+  }
+  
+  const targetLanguage = language || 'Python';
+  
+  const systemPrompt = `You are an expert LeetCode debugger and solution provider.
+
+The previous solution was INCORRECT. Your task:
+1. Analyze what went wrong in the previous solution
+2. Provide a CORRECTED solution that fixes the errors
+3. Explain what was wrong and how you fixed it
+
+CRITICAL FORMAT RULES:
+- Complete the function INSIDE the existing class structure
+- Preserve the exact function signature and class format
+- Use ${targetLanguage} syntax
+- Test the logic mentally before responding
+
+RESPONSE FORMAT:
+## What Was Wrong
+[Brief explanation of the error in the previous solution]
+
+## Corrected Solution (${targetLanguage})
+\`\`\`${targetLanguage.toLowerCase()}
+[Complete corrected code with proper class structure]
+\`\`\`
+
+## Why This Works
+[Explanation of the fix]
+
+## Complexity
+Time: O(...)
+Space: O(...)`;
+
+  const userPrompt = `Problem: ${problem.title}
+
+${problem.description}
+
+PREVIOUS INCORRECT SOLUTION:
+${previousSolution}
+
+${errorMessage ? `ERROR/ISSUE: ${errorMessage}` : 'This solution was marked as incorrect.'}
+
+${codeTemplate ? `
+Required template structure:
+\`\`\`
+${codeTemplate}
+\`\`\`
+` : ''}
+
+Language: ${targetLanguage}
+
+Please provide a CORRECTED solution that fixes the errors. Analyze the logic carefully and ensure the fix is correct.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ];
+  
+  try {
+    const response = await fetch(GROQ_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: messages,
+        temperature: 0.1,
+        max_tokens: 4000,
+        top_p: 0.95,
+        stream: false
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'API request failed');
+    }
+    
+    const responseData = await response.json();
+    const correctedSolution = responseData.choices[0].message.content;
+    
+    return {
+      success: true,
+      message: correctedSolution,
+      isCorrection: true
+    };
+    
+  } catch (error) {
+    console.error('Correction fetch error:', error);
+    return {
+      success: false,
+      error: `Failed to get correction: ${error.message}`
     };
   }
 }
