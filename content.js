@@ -610,28 +610,66 @@ function addMessageToChat(role, message, allowCorrection = false) {
   if (allowCorrection && role === 'solution') {
     const actionDiv = document.createElement('div');
     actionDiv.className = 'sb-solution-actions';
-    actionDiv.innerHTML = `
-      <button class="sb-action-btn sb-wrong-btn" onclick="requestCorrection()">
-        ❌ Wrong Answer - Get Correction
-      </button>
-      <button class="sb-action-btn sb-describe-btn" onclick="requestCorrectionWithDetails()">
-        📝 Describe the Issue
-      </button>
-    `;
+    
+    // Create buttons
+    const wrongBtn = document.createElement('button');
+    wrongBtn.className = 'sb-action-btn sb-wrong-btn';
+    wrongBtn.innerHTML = '❌ Wrong Answer - Get Correction';
+    wrongBtn.onclick = function() {
+      console.log('Wrong Answer button clicked');
+      requestCorrection();
+    };
+    
+    const describeBtn = document.createElement('button');
+    describeBtn.className = 'sb-action-btn sb-describe-btn';
+    describeBtn.innerHTML = '📝 Describe the Issue';
+    describeBtn.onclick = function() {
+      console.log('Describe Issue button clicked');
+      requestCorrectionWithDetails();
+    };
+    
+    actionDiv.appendChild(wrongBtn);
+    actionDiv.appendChild(describeBtn);
     messageDiv.appendChild(actionDiv);
   }
   
   content.appendChild(messageDiv);
   content.scrollTop = content.scrollHeight;
 }
-
 function formatMessage(message) {
   // Handle code blocks
   let formatted = message.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const blockId = 'code-block-' + Math.random().toString(36).substr(2, 9);
+    
+    // Schedule the copy button event listener to be added after the element is in the DOM
+    setTimeout(() => {
+      const copyBtn = document.getElementById(blockId);
+      if (copyBtn) {
+        copyBtn.onclick = function() {
+          const codeBlock = copyBtn.closest('.sb-code-block');
+          const codeElement = codeBlock.querySelector('code');
+          const codeText = codeElement.textContent;
+          
+          navigator.clipboard.writeText(codeText).then(() => {
+            copyBtn.textContent = '✅ Copied!';
+            setTimeout(() => {
+              copyBtn.textContent = '📋 Copy';
+            }, 2000);
+          }).catch(err => {
+            console.error('Copy failed:', err);
+            copyBtn.textContent = '❌ Failed';
+            setTimeout(() => {
+              copyBtn.textContent = '📋 Copy';
+            }, 2000);
+          });
+        };
+      }
+    }, 50);
+    
     return `<div class="sb-code-block">
       <div class="sb-code-header">
         <span class="sb-code-lang">${lang || 'code'}</span>
-        <button class="sb-copy-btn" onclick="copyCode(this)" title="Copy code">📋 Copy</button>
+        <button class="sb-copy-btn" id="${blockId}" title="Copy code">📋 Copy</button>
       </div>
       <pre><code>${escapeHtml(code.trim())}</code></pre>
     </div>`;
@@ -655,7 +693,6 @@ function formatMessage(message) {
   
   return formatted;
 }
-
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -918,9 +955,6 @@ function requestCorrectionWithDetails() {
   }
 }
 
-// Make functions globally available
-window.requestCorrection = requestCorrection;
-window.requestCorrectionWithDetails = requestCorrectionWithDetails;
 
 
 function setupMessageListener() {
