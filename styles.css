@@ -25,7 +25,7 @@
 }
 
 .sb-panel:not(.sb-minimized) {
-  overflow: auto;
+  overflow: hidden;
 }
 
 .sb-panel.sb-minimized {
@@ -142,9 +142,9 @@
   display: flex;
   flex-direction: column;
   background: #1e293b;
-  overflow-y: auto;
+  overflow: hidden;
   flex: 1;
-  max-height: calc(85vh - 62px);
+  min-height: 0;
 }
 
 /* Custom Scrollbar */
@@ -324,7 +324,26 @@
 .sb-chat {
   padding: 16px 18px;
   background: #1e293b;
-  flex-shrink: 0;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sb-chat::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sb-chat::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.sb-chat::-webkit-scrollbar-thumb {
+  background: rgba(100, 255, 218, 0.2);
+  border-radius: 4px;
+}
+
+.sb-chat::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 255, 218, 0.4);
 }
 
 .sb-message {

@@ -333,36 +333,36 @@ function createMentorPanel() {
       </div>
       
       <div class="sb-chat" id="sb-chat"></div>
+    </div>
+
+    <div class="sb-loading" id="sb-loading" style="display: none;">
+      <div class="sb-spinner"></div>
+      <span>Thinking...</span>
+    </div>
+    
+    <div class="sb-input-area">
+      <textarea 
+        id="sb-thought-input" 
+        placeholder="What are you thinking? Share your approach or ask for a hint..."
+        rows="3"
+      ></textarea>
       
-      <div class="sb-input-area">
-        <textarea 
-          id="sb-thought-input" 
-          placeholder="What are you thinking? Share your approach or ask for a hint..."
-          rows="3"
-        ></textarea>
-        
-        <div class="sb-actions">
-          <div class="sb-hint-levels">
-            <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
-            <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
-            <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
-          </div>
-          <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
-          
-          <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
-            <div class="sb-solution-divider">
-              <span>Still Stuck?</span>
-            </div>
-            <button class="sb-solution-btn" id="sb-solution-btn">
-              🔓 Show Complete Solution
-            </button>
-          </div>
+      <div class="sb-actions">
+        <div class="sb-hint-levels">
+          <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
+          <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
+          <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
         </div>
-      </div>
-      
-      <div class="sb-loading" id="sb-loading" style="display: none;">
-        <div class="sb-spinner"></div>
-        <span>Thinking...</span>
+        <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+        
+        <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
+          <div class="sb-solution-divider">
+            <span>Still Stuck?</span>
+          </div>
+          <button class="sb-solution-btn" id="sb-solution-btn">
+            🔓 Show Complete Solution
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -871,9 +871,9 @@ async function showSolution() {
       solutionBtn.style.opacity = '0.6';
       
       setTimeout(() => {
-        const content = document.getElementById('sb-content');
-        if (content) {
-          content.scrollTop = content.scrollHeight;
+        const chat = document.getElementById('sb-chat');
+        if (chat) {
+          chat.scrollTop = chat.scrollHeight;
         }
       }, 100);
     } else {
