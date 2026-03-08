@@ -606,31 +606,25 @@ function addMessageToChat(role, message, allowCorrection = false) {
     </div>
   `;
   
-  // Add correction buttons for solution messages
+  // Add correction buttons for solution messages - inside the content div
   if (allowCorrection && role === 'solution') {
+    const contentDiv = messageDiv.querySelector('.sb-message-content');
     const actionDiv = document.createElement('div');
     actionDiv.className = 'sb-solution-actions';
     
-    // Create buttons
     const wrongBtn = document.createElement('button');
     wrongBtn.className = 'sb-action-btn sb-wrong-btn';
     wrongBtn.innerHTML = '❌ Wrong Answer - Get Correction';
-    wrongBtn.onclick = function() {
-      console.log('Wrong Answer button clicked');
-      requestCorrection();
-    };
+    wrongBtn.onclick = function() { requestCorrection(); };
     
     const describeBtn = document.createElement('button');
     describeBtn.className = 'sb-action-btn sb-describe-btn';
     describeBtn.innerHTML = '📝 Describe the Issue';
-    describeBtn.onclick = function() {
-      console.log('Describe Issue button clicked');
-      requestCorrectionWithDetails();
-    };
+    describeBtn.onclick = function() { requestCorrectionWithDetails(); };
     
     actionDiv.appendChild(wrongBtn);
     actionDiv.appendChild(describeBtn);
-    messageDiv.appendChild(actionDiv);
+    contentDiv.appendChild(actionDiv);
   }
   
   content.appendChild(messageDiv);
@@ -648,7 +642,8 @@ function formatMessage(message) {
         copyBtn.onclick = function() {
           const codeBlock = copyBtn.closest('.sb-code-block');
           const codeElement = codeBlock.querySelector('code');
-          const codeText = codeElement.textContent;
+          // Use innerText to preserve whitespace/indentation
+          const codeText = codeElement.innerText;
           
           navigator.clipboard.writeText(codeText).then(() => {
             copyBtn.textContent = '✅ Copied!';
@@ -656,8 +651,16 @@ function formatMessage(message) {
               copyBtn.textContent = '📋 Copy';
             }, 2000);
           }).catch(err => {
-            console.error('Copy failed:', err);
-            copyBtn.textContent = '❌ Failed';
+            // Fallback for clipboard API failure
+            const textarea = document.createElement('textarea');
+            textarea.value = codeText;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            copyBtn.textContent = '✅ Copied!';
             setTimeout(() => {
               copyBtn.textContent = '📋 Copy';
             }, 2000);
