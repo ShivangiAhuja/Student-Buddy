@@ -25,7 +25,7 @@
 }
 
 .sb-panel:not(.sb-minimized) {
-  overflow: hidden;
+  overflow: auto;
 }
 
 .sb-panel.sb-minimized {
@@ -142,9 +142,9 @@
   display: flex;
   flex-direction: column;
   background: #1e293b;
-  overflow: hidden;
+  overflow-y: auto;
   flex: 1;
-  min-height: 0;
+  max-height: calc(85vh - 62px);
 }
 
 /* Custom Scrollbar */
@@ -157,12 +157,12 @@
 }
 
 .sb-content::-webkit-scrollbar-thumb {
-  background: rgba(100, 255, 218, 0.2);
+  background: rgba(100, 255, 218, 0.7);
   border-radius: 4px;
 }
 
 .sb-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 255, 218, 0.4);
+  background: #64ffda;
 }
 
 /* Welcome Section */
@@ -324,26 +324,7 @@
 .sb-chat {
   padding: 16px 18px;
   background: #1e293b;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.sb-chat::-webkit-scrollbar {
-  width: 8px;
-}
-
-.sb-chat::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.5);
-}
-
-.sb-chat::-webkit-scrollbar-thumb {
-  background: rgba(100, 255, 218, 0.2);
-  border-radius: 4px;
-}
-
-.sb-chat::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 255, 218, 0.4);
+  flex-shrink: 0;
 }
 
 .sb-message {
@@ -762,7 +743,7 @@
     min-height: 60px;
   }
 }
-/* Solution Action Buttons - NEW */
+/* Solution Action Buttons */
 .sb-solution-actions {
   margin-top: 16px;
   padding-top: 16px;
@@ -791,33 +772,20 @@
   gap: 6px;
 }
 
-.sb-action-btn:hover {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
-  border-color: rgba(239, 68, 68, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
-}
-
-.sb-wrong-btn {
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
+.sb-wrong-btn { border-color: rgba(239, 68, 68, 0.5); }
 .sb-wrong-btn:hover {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(220, 38, 38, 0.3) 100%);
   color: #fecaca;
+  transform: translateY(-2px);
 }
 
 .sb-describe-btn:hover {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(37, 99, 235, 0.3) 100%);
   border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  transform: translateY(-2px);
 }
 
-.sb-action-btn:active {
-  transform: translateY(0);
-}
-
-/* Code block improvements */
+/* Code Blocks */
 .sb-code-block {
   margin: 12px 0;
   border-radius: 8px;
@@ -831,34 +799,44 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 14px;
-  background: rgba(30, 41, 59, 0.8);
-  border-bottom: 1px solid rgba(100, 255, 218, 0.1);
+  background: #0f172a;
+  border-bottom: 1px solid rgba(100, 255, 218, 0.2);
 }
 
 .sb-code-lang {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
   color: #64ffda;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .sb-copy-btn {
-  padding: 4px 10px;
-  font-size: 11px;
-  background: transparent;
-  border: 1px solid rgba(100, 255, 218, 0.3);
-  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(100, 255, 218, 0.15);
+  border: 1px solid rgba(100, 255, 218, 0.5);
+  border-radius: 6px;
   color: #64ffda;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .sb-copy-btn:hover {
-  background: rgba(100, 255, 218, 0.1);
+  background: rgba(100, 255, 218, 0.3);
   border-color: #64ffda;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(100, 255, 218, 0.2);
+}
+
+.sb-copy-btn:active {
+  transform: translateY(0);
 }
 
 .sb-code-block pre {
@@ -866,7 +844,14 @@
   padding: 16px;
   overflow-x: auto;
   background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: #64ffda #0f172a;
 }
+
+.sb-code-block pre::-webkit-scrollbar { height: 6px; }
+.sb-code-block pre::-webkit-scrollbar-track { background: #0f172a; }
+.sb-code-block pre::-webkit-scrollbar-thumb { background: #64ffda; border-radius: 4px; }
+.sb-code-block pre::-webkit-scrollbar-thumb:hover { background: #ffffff; }
 
 .sb-code-block code {
   font-family: 'JetBrains Mono', monospace;
@@ -893,13 +878,9 @@
   font-family: 'Inter', sans-serif;
 }
 
-.sb-list {
-  margin: 8px 0;
-  padding-left: 20px;
-  color: #cbd5e1;
-}
+.sb-list { margin: 8px 0; padding-left: 20px; color: #cbd5e1; }
+.sb-list li { margin: 6px 0; line-height: 1.6; }
 
-.sb-list li {
-  margin: 6px 0;
-  line-height: 1.6;
+@media (max-height: 700px) {
+  .sb-panel { height: 95vh; max-height: 95vh; }
 }

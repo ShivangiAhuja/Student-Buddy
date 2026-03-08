@@ -333,36 +333,36 @@ function createMentorPanel() {
       </div>
       
       <div class="sb-chat" id="sb-chat"></div>
-    </div>
-
-    <div class="sb-loading" id="sb-loading" style="display: none;">
-      <div class="sb-spinner"></div>
-      <span>Thinking...</span>
-    </div>
-    
-    <div class="sb-input-area">
-      <textarea 
-        id="sb-thought-input" 
-        placeholder="What are you thinking? Share your approach or ask for a hint..."
-        rows="3"
-      ></textarea>
       
-      <div class="sb-actions">
-        <div class="sb-hint-levels">
-          <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
-          <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
-          <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
-        </div>
-        <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+      <div class="sb-input-area">
+        <textarea 
+          id="sb-thought-input" 
+          placeholder="What are you thinking? Share your approach or ask for a hint..."
+          rows="3"
+        ></textarea>
         
-        <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
-          <div class="sb-solution-divider">
-            <span>Still Stuck?</span>
+        <div class="sb-actions">
+          <div class="sb-hint-levels">
+            <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
+            <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
+            <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
           </div>
-          <button class="sb-solution-btn" id="sb-solution-btn">
-            🔓 Show Complete Solution
-          </button>
+          <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+          
+          <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
+            <div class="sb-solution-divider">
+              <span>Still Stuck?</span>
+            </div>
+            <button class="sb-solution-btn" id="sb-solution-btn">
+              🔓 Show Complete Solution
+            </button>
+          </div>
         </div>
+      </div>
+      
+      <div class="sb-loading" id="sb-loading" style="display: none;">
+        <div class="sb-spinner"></div>
+        <span>Thinking...</span>
       </div>
     </div>
   `;
@@ -715,48 +715,7 @@ window.copyCode = function(button) {
   });
 };
 
-function formatMessage(text) {
-  // Handle code blocks first
-  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-    return `<pre><code class="language-${lang || 'text'}">${escapeHtml(code.trim())}</code></pre>`;
-  });
-  
-  // Handle inline code
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // Handle bold (for highlighting important terms)
-  text = text.replace(/\*\*(.*?)\*\*/g, '<strong class="sb-highlight">$1</strong>');
-  
-  // Handle italic
-  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  
-  // Handle numbered lists (1. 2. 3.)
-  text = text.replace(/^(\d+)\.\s+(.+)$/gm, '<li class="sb-numbered-item"><span class="sb-number">$1</span>$2</li>');
-  
-  // Wrap consecutive numbered items in ol
-  text = text.replace(/(<li class="sb-numbered-item">.*?<\/li>\n?)+/g, match => {
-    return '<ol class="sb-numbered-list">' + match + '</ol>';
-  });
-  
-  // Handle bullet points (• or - at start of line)
-  text = text.replace(/^[•\-]\s+(.+)$/gm, '<li class="sb-bullet-item">$1</li>');
-  
-  // Wrap consecutive bullets in ul
-  text = text.replace(/(<li class="sb-bullet-item">.*?<\/li>\n?)+/g, match => {
-    return '<ul class="sb-bullet-list">' + match + '</ul>';
-  });
-  
-  // Handle line breaks (but not inside lists)
-  text = text.replace(/\n(?![<\/])/g, '<br>');
-  
-  return text;
-}
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
 
 function showLoading(show) {
   document.getElementById('sb-loading').style.display = show ? 'flex' : 'none';
@@ -871,9 +830,9 @@ async function showSolution() {
       solutionBtn.style.opacity = '0.6';
       
       setTimeout(() => {
-        const chat = document.getElementById('sb-chat');
-        if (chat) {
-          chat.scrollTop = chat.scrollHeight;
+        const contentEl = document.getElementById('sb-content');
+        if (contentEl) {
+          contentEl.scrollTop = contentEl.scrollHeight;
         }
       }, 100);
     } else {
@@ -931,9 +890,9 @@ async function requestCorrection(errorMessage = '') {
       addMessageToChat('solution', response.message, true); // Add with correction buttons
       
       setTimeout(() => {
-        const content = document.getElementById('sb-content');
-        if (content) {
-          content.scrollTop = content.scrollHeight;
+        const contentEl = document.getElementById('sb-content');
+        if (contentEl) {
+          contentEl.scrollTop = contentEl.scrollHeight;
         }
       }, 100);
     } else {
