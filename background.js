@@ -84,8 +84,8 @@ async function handleMentorRequest(data) {
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: messages,
-        temperature: 0.7,
-        max_tokens: 1024,
+        temperature: 0.4,
+        max_tokens: 1500,
         top_p: 1,
         stream: false
       })
@@ -136,23 +136,22 @@ function buildMessages(problem, userThought, hintLevel, history) {
 }
 
 function buildSystemPrompt(hintLevel) {
-  const basePrompt = `You are a helpful coding tutor guiding a student through programming problems. Your goal is to help them learn by asking questions and providing hints, not by giving complete solutions.
+  const basePrompt = `You are an expert competitive programming tutor with deep knowledge of all LeetCode patterns: dynamic programming, graphs, BFS/DFS, binary search, sliding window, two pointers, tries, heaps, union-find, monotonic stacks, segment trees, and more.
 
-Guidelines:
-- Ask guiding questions to help them think through the problem
-- Provide hints that point them in the right direction
-- Encourage their correct insights
-- Gently redirect if they're on the wrong track
-- Keep responses concise (2-4 sentences)
-- Be encouraging and supportive
-- Never provide complete code solutions`;
+CRITICAL RULES:
+- Carefully read the FULL problem including constraints before hinting
+- Identify the EXACT correct algorithm for this specific problem
+- For medium/hard problems: reason about why the naive approach fails first, then guide toward the optimal
+- Be algorithmically precise — vague hints cause wrong answers
+- Never give complete code
+- If student is on wrong track, clearly say so and redirect`;
 
   if (hintLevel === 1) {
-    return basePrompt + '\n\nProvide a GENTLE hint - just a nudge in the right direction.';
+    return basePrompt + '\n\nHINT LEVEL 1 — Gentle nudge: Ask ONE precise question pointing to the key insight. Example: "What data structure gives O(1) lookups?" Keep it to 2-3 sentences max.';
   } else if (hintLevel === 2) {
-    return basePrompt + '\n\nProvide a MEDIUM hint - mention the approach or algorithm that could work.';
+    return basePrompt + '\n\nHINT LEVEL 2 — Algorithm reveal: Name the correct algorithm/pattern, explain WHY it fits this problem\'s constraints, and describe the high-level approach. No code. 3-5 sentences.';
   } else if (hintLevel === 3) {
-    return basePrompt + '\n\nProvide a STRONG hint - describe the solution approach in detail without code.';
+    return basePrompt + '\n\nHINT LEVEL 3 — Step-by-step breakdown: Give numbered steps covering what to initialize, what to iterate over, what to track/update, and what to return. Bold key variables. No code but very specific.';
   }
   
   return basePrompt;

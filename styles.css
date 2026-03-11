@@ -7,6 +7,7 @@
   bottom: 20px;
   right: 20px;
   width: 450px;
+  height: 85vh;
   max-height: 85vh;
   min-width: 350px;
   min-height: 400px;
@@ -142,9 +143,9 @@
   display: flex;
   flex-direction: column;
   background: #1e293b;
-  overflow-y: auto;
+  overflow: hidden;
   flex: 1;
-  max-height: calc(85vh - 62px);
+  min-height: 0;
 }
 
 /* Custom Scrollbar */
@@ -908,4 +909,35 @@
 
 @media (max-height: 700px) {
   .sb-panel { height: 95vh; max-height: 95vh; }
+}
+/* Collapse welcome when chat is active */
+.sb-welcome.sb-collapsed {
+  padding: 8px 18px;
+  border-bottom: 1px solid rgba(100, 255, 218, 0.1);
+}
+.sb-welcome.sb-collapsed .sb-welcome-header,
+.sb-welcome.sb-collapsed .sb-progress-tracker {
+  display: none;
+}
+.sb-welcome.sb-collapsed .sb-problem-card {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+}
+.sb-welcome.sb-collapsed .sb-problem-label {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.sb-welcome.sb-collapsed .sb-problem-title {
+  margin-bottom: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.sb-welcome.sb-collapsed .sb-language-selector {
+  display: none;
 }

@@ -585,13 +585,13 @@ async function sendThought(hintLevel) {
 
 // IMPROVED: Add messages with optional correction buttons
 function addMessageToChat(role, message, allowCorrection = false) {
-  const content = document.getElementById('sb-content');
-  if (!content) return;
-  
-  // Remove welcome message
-  const welcome = content.querySelector('.sb-welcome-message');
-  if (welcome) {
-    welcome.remove();
+  const chat = document.getElementById('sb-chat');
+  if (!chat) return;
+
+  // Collapse welcome card on first message to give chat more space
+  const welcome = document.querySelector('.sb-welcome');
+  if (welcome && !welcome.classList.contains('sb-collapsed')) {
+    welcome.classList.add('sb-collapsed');
   }
   
   const messageDiv = document.createElement('div');
@@ -627,8 +627,8 @@ function addMessageToChat(role, message, allowCorrection = false) {
     contentDiv.appendChild(actionDiv);
   }
   
-  content.appendChild(messageDiv);
-  content.scrollTop = content.scrollHeight;
+  chat.appendChild(messageDiv);
+  chat.scrollTop = chat.scrollHeight;
 }
 function formatMessage(message) {
   // Handle code blocks
