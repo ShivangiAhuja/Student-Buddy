@@ -79,28 +79,6 @@ Student Buddy acts as an AI mentor that:
 - Quick action buttons
 
 ---
-
-## 🎬 Demo
-
-### Screenshots
-
-**Main Interface**
-![Main Interface](screenshots/main-interface.png)
-
-**Code Review**
-![Code Review](screenshots/code-review.png)
-
-**Progress Dashboard**
-![Progress Dashboard](screenshots/progress-dashboard.png)
-
-**Solution History**
-![Solution History](screenshots/solution-history.png)
-
-### Video Demo
-[Watch 2-minute demo →](#)
-
----
-
 ## 🚀 Installation
 
 ### Prerequisites
@@ -138,48 +116,6 @@ Student Buddy acts as an AI mentor that:
 1. Navigate to any LeetCode problem
 2. Extension appears automatically
 3. Start solving with AI guidance!
-
----
-
-## 📖 Usage Guide
-
-### Basic Workflow
-
-```bash
-# 1. Open LeetCode Problem
-→ Extension loads with problem info
-
-# 2. Think and Code
-→ Try solving on your own first
-
-# 3. Need Help?
-→ Click hint buttons or press Ctrl+1/2/3
-→ Get progressive guidance
-
-# 4. Review Your Code
-→ Press Ctrl+R for AI feedback
-→ Fix issues before submitting
-
-# 5. Save Progress
-→ Press Ctrl+S to save solution
-→ Track in history (Ctrl+H)
-
-# 6. Find Similar Problems
-→ Press Ctrl+P for recommendations
-→ Build pattern recognition
-```
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+M` | Toggle minimize |
-| `Ctrl+R` | Code review |
-| `Ctrl+H` | View history |
-| `Ctrl+I` | View stats |
-| `Ctrl+P` | Related problems |
-| `Ctrl+S` | Save solution |
-| `Ctrl+1/2/3` | Quick hints |
 
 ---
 
@@ -227,16 +163,6 @@ Student Buddy acts as an AI mentor that:
 - Groq AI API (LLM integration)
 - REST API communication
 - JSON data exchange
-
-**Storage:**
-- Chrome Local Storage (solution history)
-- Chrome Sync Storage (settings, API keys)
-
-**Design:**
-- Custom CSS (dark coder theme)
-- Responsive layout
-- JetBrains Mono font
-- Glassmorphism effects
 
 ---
 
@@ -313,72 +239,6 @@ async function reviewCode() {
 }
 ```
 
-### 4. Progress Tracking
-
-**Metrics Stored:**
-```javascript
-sessionStats = {
-  problemsSolved: 0,
-  hintsUsed: 0,
-  solutionsViewed: 0,
-  totalTime: 0,
-  avgHintsPerProblem: 0,
-  avgTimePerProblem: 0
-}
-```
-
-**Insights Generation:**
-```javascript
-if (avgHints < 2) 
-  → "🌟 Excellent! Try harder problems"
-else if (avgHints < 3)
-  → "💪 Great job! Learning effectively"
-else
-  → "📚 Keep practicing! You're improving"
-```
-
-### 5. Solution History
-
-**Data Structure:**
-```javascript
-solutionData = {
-  problem: "Two Sum",
-  language: "C++",
-  hintsUsed: 2,
-  timeSpent: 1200, // seconds
-  conversation: [...],
-  timestamp: 1234567890,
-  date: "2024-01-15"
-}
-```
-
-**Storage:**
-- Last 50 solutions in Chrome Local Storage
-- Full conversation replay
-- Indexed by timestamp
-
----
-
-## 📊 Performance Metrics
-
-### Speed
-- **Hint Response**: < 1 second (Groq is fast!)
-- **Code Review**: 2-3 seconds (detailed analysis)
-- **Solution**: 3-4 seconds (complete code + explanation)
-- **UI Rendering**: Instant (optimized DOM updates)
-
-### Efficiency
-- **Memory Usage**: ~15MB (lightweight)
-- **API Calls**: Batched and cached
-- **Storage**: ~2MB for 50 solutions
-
-### Accuracy
-- **Language Detection**: 99% (3-layer system)
-- **Hint Quality**: High (engineered prompts)
-- **Code Review**: Comprehensive (all aspects covered)
-
----
-
 ## 🎓 Learning Outcomes
 
 Students using this extension experience:
@@ -387,59 +247,6 @@ Students using this extension experience:
 - ✅ **Better understanding** of algorithms
 - ✅ **Increased confidence** in interviews
 - ✅ **Pattern recognition** skills
-
----
-
-## 🛣️ Roadmap
-
-### Phase 1: Core Features ✅ (Current)
-- [x] Progressive hint system
-- [x] Multi-language support
-- [x] Code review
-- [x] Solution history
-- [x] Progress tracking
-- [x] Related problems
-- [x] Keyboard shortcuts
-
-### Phase 2: Enhanced Features 🚧 (In Progress)
-- [ ] Voice mode (speak to AI)
-- [ ] Video explanations
-- [ ] Spaced repetition system
-- [ ] Export to GitHub
-- [ ] Weekly email reports
-
-### Phase 3: Expansion 📅 (Planned)
-- [ ] Support for CodeForces
-- [ ] Support for HackerRank
-- [ ] Mobile app version
-- [ ] Collaborative mode (pair programming)
-- [ ] Gamification (XP, badges)
-
-### Phase 4: Advanced 🔮 (Future)
-- [ ] Visual algorithm animator
-- [ ] Contest preparation mode
-- [ ] Mock interview simulator
-- [ ] Company-specific preparation
-- [ ] AI tutor customization
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open Pull Request
-
-**Areas for Contribution:**
-- Additional language support
-- UI/UX improvements
-- Bug fixes
-- Documentation
-- New features from roadmap
 
 ---
 
@@ -452,10 +259,10 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 ## 👨‍💻 Author
 
 **Your Name**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- LinkedIn: [Your Profile](https://linkedin.com/in/yourprofile)
-- Email: your.email@example.com
-- Portfolio: [yourwebsite.com](https://yourwebsite.com)
+- GitHub: [ShivangiAhuja](https://github.com/ShivangiAhuja)
+- LinkedIn: [Shivangi Ahuja](https://linkedin.com/in/shivangiahuja2210)
+- Email: shivangiahuja2210@gmail.com
+- Portfolio: [shivangiahuja.vercel.com](https://shivangiahuja.vercel.app/)
 
 ---
 
@@ -465,27 +272,6 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 - [LeetCode](https://leetcode.com) for the platform
 - Open source community for inspiration
 - All users providing valuable feedback
-
----
-
-## 📈 Project Stats
-
-- **Lines of Code**: 9,000+
-- **Features**: 7 major features
-- **Languages Supported**: 14
-- **Keyboard Shortcuts**: 9
-- **Development Time**: 3 months
-- **Active Users**: 500+
-
----
-
-## 🐛 Known Issues
-
-- [ ] Rare language detection failures on custom themes
-- [ ] Solution history limited to 50 (will increase)
-- [ ] Occasional API timeout on slow connections
-
-[Report a bug](https://github.com/yourusername/student-buddy/issues)
 
 ---
 
@@ -499,15 +285,6 @@ Want to discuss? [Start a discussion](https://github.com/yourusername/student-bu
 
 ---
 
-## 📚 Documentation
-
-- [Installation Guide](docs/INSTALLATION.md)
-- [User Guide](docs/USER_GUIDE.md)
-- [API Documentation](docs/API.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
-- [Architecture Design](docs/ARCHITECTURE.md)
-
----
 
 <div align="center">
 

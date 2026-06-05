@@ -333,36 +333,36 @@ function createMentorPanel() {
       </div>
       
       <div class="sb-chat" id="sb-chat"></div>
+    </div>
+
+    <div class="sb-loading" id="sb-loading" style="display: none;">
+      <div class="sb-spinner"></div>
+      <span>Thinking...</span>
+    </div>
+
+    <div class="sb-input-area">
+      <textarea 
+        id="sb-thought-input" 
+        placeholder="What are you thinking? Share your approach or ask for a hint..."
+        rows="2"
+      ></textarea>
       
-      <div class="sb-input-area">
-        <textarea 
-          id="sb-thought-input" 
-          placeholder="What are you thinking? Share your approach or ask for a hint..."
-          rows="3"
-        ></textarea>
-        
-        <div class="sb-actions">
-          <div class="sb-hint-levels">
-            <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
-            <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
-            <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
-          </div>
-          <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
-          
-          <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
-            <div class="sb-solution-divider">
-              <span>Still Stuck?</span>
-            </div>
-            <button class="sb-solution-btn" id="sb-solution-btn">
-              🔓 Show Complete Solution
-            </button>
-          </div>
+      <div class="sb-actions">
+        <div class="sb-hint-levels">
+          <button class="sb-hint-btn" data-level="1">💡 First Hint</button>
+          <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
+          <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
         </div>
-      </div>
-      
-      <div class="sb-loading" id="sb-loading" style="display: none;">
-        <div class="sb-spinner"></div>
-        <span>Thinking...</span>
+        <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+        
+        <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
+          <div class="sb-solution-divider">
+            <span>Still Stuck?</span>
+          </div>
+          <button class="sb-solution-btn" id="sb-solution-btn">
+            🔓 Show Complete Solution
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -585,13 +585,13 @@ async function sendThought(hintLevel) {
 
 // IMPROVED: Add messages with optional correction buttons
 function addMessageToChat(role, message, allowCorrection = false) {
-  const chat = document.getElementById('sb-chat');
-  if (!chat) return;
-
-  // Collapse welcome card on first message to give chat more space
-  const welcome = document.querySelector('.sb-welcome');
-  if (welcome && !welcome.classList.contains('sb-collapsed')) {
-    welcome.classList.add('sb-collapsed');
+  const content = document.getElementById('sb-content');
+  if (!content) return;
+  
+  // Remove welcome message
+  const welcome = content.querySelector('.sb-welcome-message');
+  if (welcome) {
+    welcome.remove();
   }
   
   const messageDiv = document.createElement('div');
@@ -627,8 +627,8 @@ function addMessageToChat(role, message, allowCorrection = false) {
     contentDiv.appendChild(actionDiv);
   }
   
-  chat.appendChild(messageDiv);
-  chat.scrollTop = chat.scrollHeight;
+  content.appendChild(messageDiv);
+  content.scrollTop = content.scrollHeight;
 }
 function formatMessage(message) {
   // Handle code blocks

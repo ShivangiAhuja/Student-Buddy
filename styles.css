@@ -26,7 +26,7 @@
 }
 
 .sb-panel:not(.sb-minimized) {
-  overflow: auto;
+  overflow: hidden;
 }
 
 .sb-panel.sb-minimized {
@@ -49,7 +49,12 @@
 }
 
 .sb-panel.sb-minimized .sb-content {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #1e293b;
 }
 
 /* Header */
@@ -143,9 +148,9 @@
   display: flex;
   flex-direction: column;
   background: #1e293b;
-  overflow: hidden;
+  overflow-y: auto;
   flex: 1;
-  min-height: 0;
+  max-height: calc(85vh - 62px);
 }
 
 /* Custom Scrollbar */
@@ -323,13 +328,13 @@
 
 /* Chat Area */
 .sb-chat {
-  padding: 16px 18px;
-  background: #1e293b;
-  overflow-y: auto;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: #1e293b;
   scrollbar-width: thin;
-  scrollbar-color: rgba(100, 255, 218, 0.7) rgba(15, 23, 42, 0.5);
+  scrollbar-color: rgba(100, 255, 218, 0.6) rgba(15, 23, 42, 0.5);
 }
 
 .sb-chat::-webkit-scrollbar { width: 8px; }
@@ -521,10 +526,10 @@
 
 /* Input Area */
 .sb-input-area {
-  padding: 16px 18px 18px;
+  flex-shrink: 0;
+  padding: 10px 14px 12px;
   background: #0f172a;
   border-top: 1px solid rgba(100, 255, 218, 0.1);
-  flex-shrink: 0;
 }
 
 .sb-input-area textarea {
@@ -909,35 +914,4 @@
 
 @media (max-height: 700px) {
   .sb-panel { height: 95vh; max-height: 95vh; }
-}
-/* Collapse welcome when chat is active */
-.sb-welcome.sb-collapsed {
-  padding: 8px 18px;
-  border-bottom: 1px solid rgba(100, 255, 218, 0.1);
-}
-.sb-welcome.sb-collapsed .sb-welcome-header,
-.sb-welcome.sb-collapsed .sb-progress-tracker {
-  display: none;
-}
-.sb-welcome.sb-collapsed .sb-problem-card {
-  margin-top: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-}
-.sb-welcome.sb-collapsed .sb-problem-label {
-  margin-bottom: 0;
-  white-space: nowrap;
-}
-.sb-welcome.sb-collapsed .sb-problem-title {
-  margin-bottom: 0;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-.sb-welcome.sb-collapsed .sb-language-selector {
-  display: none;
 }
