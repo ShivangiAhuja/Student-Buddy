@@ -1,0 +1,16 @@
+ .gitignore                 |   2 [32m+[m
+ README.md                  | 102 [32m++++++++++++++++++++++++++++++++++++[m[31m---------[m
+ backend/.env.example       |  14 [32m+++++++[m
+ backend/config/__init__.py |   0
+ backend/config/asgi.py     |   5 [32m+++[m
+ backend/config/settings.py |  91 [32m++++++++++++++++++++++++++++++++++++++++[m
+ backend/config/urls.py     |   3 [32m++[m
+ backend/config/wsgi.py     |   5 [32m+++[m
+ backend/core/__init__.py   |   0
+ backend/core/apps.py       |   6 [32m+++[m
+ backend/core/tests.py      |  27 [32m++++++++++++[m
+ backend/core/urls.py       |   5 [32m+++[m
+ backend/core/views.py      |  13 [32m++++++[m
+ backend/manage.py          |   7 [32m++++[m
+ backend/requirements.txt   |   4 [32m++[m
+ 15 files changed, 264 insertions(+), 20 deletions(-)

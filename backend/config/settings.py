@@ -1,5 +1,6 @@
 """Environment-driven settings for the minimal Student Buddy API."""
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -25,6 +26,7 @@ ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "loc
 INSTALLED_APPS = [
     "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.messages", "django.contrib.staticfiles", "rest_framework", "core",
+    "rest_framework_simplejwt.token_blacklist", "accounts",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -83,6 +85,43 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {
+        "register": os.getenv("AUTH_REGISTER_RATE", "5/hour"),
+        "login": os.getenv("AUTH_LOGIN_RATE", "10/minute"),
+        "refresh": os.getenv("AUTH_REFRESH_RATE", "30/minute"),
+        "logout": os.getenv("AUTH_LOGOUT_RATE", "30/minute"),
+    },
+    # Do not let untrusted X-Forwarded-For headers bypass IP throttles.
+    "NUM_PROXIES": 0,
+}
+
+
+def env_positive_int(name, default):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise ImproperlyConfigured(f"{name} must be a positive integer.") from exc
+    if value <= 0:
+        raise ImproperlyConfigured(f"{name} must be a positive integer.")
+    return value
+
+
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "").strip()
+if len(JWT_SIGNING_KEY) < 32 or JWT_SIGNING_KEY == "replace-with-a-generated-jwt-signing-key":
+    raise ImproperlyConfigured("Set JWT_SIGNING_KEY to a separate random secret of at least 32 characters.")
+if JWT_SIGNING_KEY == SECRET_KEY:
+    raise ImproperlyConfigured("JWT_SIGNING_KEY must differ from DJANGO_SECRET_KEY.")
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_positive_int("JWT_ACCESS_MINUTES", 5)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_positive_int("JWT_REFRESH_DAYS", 1)),
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "ALGORITHM": "HS256",
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SESSION_COOKIE_SECURE = not DEBUG

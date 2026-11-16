@@ -4,7 +4,7 @@ Student Buddy is an existing Manifest V3 Chrome extension that provides AI codin
 
 ## Current status
 
-Phase 2: a minimal Django REST Framework backend now runs independently of the Chrome extension. It provides `GET /api/health/`, environment-based settings, SQLite, and automated tests. The extension is unchanged. JWT authentication, Groq integration, persistent conversations, quotas, and a dashboard remain planned.
+Phase 3: the standalone backend provides registration, JWT login and refresh, the signed-in user profile, and authenticated refresh-token logout. Health, SQLite, and the extension remain intact. Backend Groq integration, persistent conversations, quotas, and the dashboard remain planned.
 
 The legacy extension still calls Groq directly and saves a user-supplied API key in Chrome sync storage. This is a development prototype, not the intended production security model. The backend migration will remove frontend key storage and direct Groq requests.
 
@@ -23,6 +23,7 @@ Student Buddy/
 +-- backend/
 |   +-- config/            # Settings and application entry points
 |   +-- core/              # Health endpoint and tests
+|   +-- accounts/          # Registration, JWT APIs, email index, and tests
 |   +-- manage.py
 |   +-- requirements.txt
 |   +-- .env.example       # Placeholders only
@@ -94,18 +95,18 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The virtual environment isolates backend packages. Calling its Python directly avoids PowerShell activation-policy issues. `requirements.txt` pins Django 5.2.19, DRF 3.18.3, and python-dotenv 1.2.4, the versions installed and tested here.
+The virtual environment isolates backend packages. Calling its Python directly avoids PowerShell activation-policy issues. `requirements.txt` pins Django 5.2.19, DRF 3.18.3, python-dotenv 1.2.4, and Simple JWT 5.5.1, the versions installed and tested here.
 
 For a **fresh checkout only**, create local settings without overwriting an existing `.env`:
 
 ```powershell
 if (-not (Test-Path -LiteralPath .env)) {
     Copy-Item -LiteralPath .env.example -Destination .env
-    .\.venv\Scripts\python.exe -c "import secrets; from pathlib import Path; p = Path('.env'); p.write_text(p.read_text(encoding='utf-8').replace('replace-with-a-generated-secret-key', secrets.token_urlsafe(64)), encoding='utf-8')"
+    .\.venv\Scripts\python.exe -c "import secrets; from pathlib import Path; p = Path('.env'); p.write_text(p.read_text(encoding='utf-8').replace('replace-with-a-generated-secret-key', secrets.token_urlsafe(64)).replace('replace-with-a-generated-jwt-signing-key', secrets.token_urlsafe(64)), encoding='utf-8')"
 }
 ```
 
-This writes a fresh key to the ignored `.env` without printing it. If `.env` already exists, preserve it and ensure it has a real `DJANGO_SECRET_KEY`. The checked-in example deliberately cannot be used as a real key. Local development uses `DJANGO_DEBUG=true`; process environment variables override `.env` values. Never enable debug mode on a public deployment.
+This writes independent Django and JWT keys to the ignored `.env` without printing them. If `.env` already exists, preserve it and follow the Phase 3 upgrade instructions below. The example placeholders cannot be used as real keys. Local development uses `DJANGO_DEBUG=true`; process environment variables override `.env`. Never enable debug mode publicly.
 
 Run the backend commands from the same `backend` directory:
 
@@ -116,7 +117,7 @@ Run the backend commands from the same `backend` directory:
 .\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
 ```
 
-`check` validates configuration. `migrate` creates Django's built-in tables in ignored `backend/db.sqlite3`; it does not create Student Buddy conversation models or authentication endpoints. `test` runs the health API tests. `runserver` serves the local API; stop it with **Ctrl+C**. This server is for local development, not deployment.
+`check` validates configuration. `migrate` creates Django's built-in tables, the email index, and JWT blacklist tables in ignored `backend/db.sqlite3`; no conversation models are created. `test` runs account and health API tests in an isolated temporary test database. `runserver` serves the local API; stop it with **Ctrl+C**. This server is for local development, not deployment.
 
 In a second PowerShell terminal, from any directory:
 
@@ -140,7 +141,121 @@ Expected JSON (also viewable by opening that URL):
 - `core/tests.py` checks exact JSON, rejected write methods, and host validation. The tests deliberately prohibit database queries.
 - `config/wsgi.py` and `config/asgi.py` are standard entry points for later hosting; no hosting server dependency is installed yet.
 
-Only Django, DRF, and python-dotenv are direct dependencies. There is no JWT, Groq, PostgreSQL driver, CORS middleware, or extension integration in this phase. DRF defaults to requiring authenticated access for future views; health explicitly allows anonymous access. Django's standard authentication middleware is present, but no login or registration API exists.
+Direct dependencies are Django, DRF, python-dotenv, and Simple JWT. There is no Groq, PostgreSQL driver, CORS middleware, or extension integration. Protected APIs require JWT authentication; health, registration, login, and refresh explicitly allow anonymous access.
+
+## Authentication API (Phase 3)
+
+Django's standard `User` model already supplies the fields, authentication, and password hashing needed here. A custom model is unnecessary. Usernames follow Django's case-sensitive uniqueness rules. Registration lowercases emails; an accounts migration adds a case-insensitive unique index for nonempty emails to prevent duplicate registrations, including concurrent inserts. Existing duplicate emails must be resolved before migration; no users are silently deleted. Empty emails remain available for management commands, but API registration requires an email.
+
+### Upgrade an existing environment
+
+Run from PowerShell. This preserves `.env` and appends an independent random JWT signing key only if it is missing. This workspace's local key has already been generated.
+
+```powershell
+Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy\backend'
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+@'
+from pathlib import Path
+import secrets
+p = Path('.env')
+text = p.read_text(encoding='utf-8')
+if not any(line.startswith('JWT_SIGNING_KEY=') for line in text.splitlines()):
+    with p.open('a', encoding='utf-8') as env_file:
+        env_file.write('\nJWT_SIGNING_KEY=' + secrets.token_urlsafe(64) + '\n')
+'@ | .\.venv\Scripts\python.exe -
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test --verbosity 2
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+If a key already exists as a placeholder, replace it locally with a generated value. Restart the server after changing settings. Keep keys out of tracked files.
+
+### Environment variables
+
+`.env.example` is the complete reference. Process environment overrides `.env`.
+
+| Variable | Default / requirement |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Required random backend-only secret |
+| `JWT_SIGNING_KEY` | Required independent random secret, at least 32 characters |
+| `DJANGO_DEBUG` | `false`; example enables local debugging |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` |
+| `DB_ENGINE`, `DB_NAME` | `sqlite`, `db.sqlite3` |
+| `JWT_ACCESS_MINUTES` | `5`, positive integer |
+| `JWT_REFRESH_DAYS` | `1`, positive integer |
+| `AUTH_REGISTER_RATE` | `5/hour` per IP |
+| `AUTH_LOGIN_RATE` | `10/minute` per IP |
+| `AUTH_REFRESH_RATE` | `30/minute` per IP |
+| `AUTH_LOGOUT_RATE` | `30/minute` per IP |
+
+JWT payloads are signed, not encrypted. Tokens include a user identifier, not passwords or emails. Never log passwords, signing keys, or tokens.
+
+### Endpoints
+
+| Method and URL | Access | Request / response |
+| --- | --- | --- |
+| `GET /api/health/` | Public | `200`: status and service |
+| `POST /api/auth/register/` | Public, throttled | username, email, password, password_confirmation; `201`: id, username, email |
+| `POST /api/auth/login/` | Public, throttled | username, password; `200`: access, refresh |
+| `POST /api/auth/refresh/` | Public, throttled | refresh; `200`: new access and refresh |
+| `GET /api/auth/profile/` | Bearer access token | `200`: own id, username, email |
+| `POST /api/auth/logout/` | Bearer access token, throttled | own refresh; `204`, empty body |
+
+Validation failures and duplicates return `400`. Missing/invalid authentication and invalid refresh requests return `401`; throttled requests return `429` with `Retry-After`. Login returns the same generic credential error for unknown users, wrong passwords, and inactive users. Logout rejects malformed, expired, already-blacklisted, or another user's refresh token with `400`. Profile takes no user-ID argument.
+
+### Example PowerShell requests
+
+In a second terminal, from any directory while the server runs. Choose a fresh username/email when repeating registration. The secure password prompt avoids a literal password in shell history, but the password necessarily exists in memory while constructing JSON. Tokens remain in variables rather than being printed.
+
+```powershell
+$apiBase = 'http://127.0.0.1:8000/api'
+$studentName = 'student_demo'
+$studentEmail = 'student_demo@example.com'
+$studentCredential = Get-Credential -UserName $studentName -Message 'Choose a strong Student Buddy password'
+$studentPassword = $studentCredential.GetNetworkCredential().Password
+
+$registrationBody = @{
+    username = $studentName
+    email = $studentEmail
+    password = $studentPassword
+    password_confirmation = $studentPassword
+} | ConvertTo-Json
+Invoke-RestMethod -Uri "$apiBase/auth/register/" -Method Post -ContentType 'application/json' -Body $registrationBody
+
+$loginBody = @{ username = $studentName; password = $studentPassword } | ConvertTo-Json
+$studentTokens = Invoke-RestMethod -Uri "$apiBase/auth/login/" -Method Post -ContentType 'application/json' -Body $loginBody
+$studentHeaders = @{ Authorization = "Bearer $($studentTokens.access)" }
+Invoke-RestMethod -Uri "$apiBase/auth/profile/" -Method Get -Headers $studentHeaders
+
+# Refresh rotates BOTH tokens. Always replace the previous pair.
+$refreshBody = @{ refresh = $studentTokens.refresh } | ConvertTo-Json
+$studentTokens = Invoke-RestMethod -Uri "$apiBase/auth/refresh/" -Method Post -ContentType 'application/json' -Body $refreshBody
+$studentHeaders = @{ Authorization = "Bearer $($studentTokens.access)" }
+
+$logoutBody = @{ refresh = $studentTokens.refresh } | ConvertTo-Json
+Invoke-RestMethod -Uri "$apiBase/auth/logout/" -Method Post -Headers $studentHeaders -ContentType 'application/json' -Body $logoutBody
+# This final request should fail with HTTP 401:
+Invoke-RestMethod -Uri "$apiBase/auth/refresh/" -Method Post -ContentType 'application/json' -Body $logoutBody
+
+Remove-Variable studentPassword, studentCredential, registrationBody, loginBody, refreshBody, logoutBody, studentTokens, studentHeaders
+```
+
+PowerShell reports the expected final `401` as an HTTP error. Logout revokes only the submitted refresh token. Already-issued access tokens remain valid until expiry, and other sessions are unaffected. Refresh rotation blacklists the consumed refresh token; clients must replace their stored pair. This does not implement token-family compromise detection or atomic replay prevention for concurrent refreshes.
+
+### Security and maintenance
+
+DRF uses JWT only for protected APIs; Django session cookies do not grant API access. Password validation includes the candidate username/email, and `create_user` hashes passwords. Auth responses use `Cache-Control: no-store`. No password/token logging is added. Production debug mode must be off, and logging must exclude request bodies and Authorization headers.
+
+Throttling uses Django's default local-memory cache: limits are per process and reset on restart. Before deployment, configure shared caching and infrastructure-level rate limits. This is basic abuse control, not distributed brute-force or denial-of-service protection. Untrusted forwarded-IP headers are ignored (`NUM_PROXIES=0`); trusted-proxy handling needs a deployment-specific design. Users sharing an IP share limits. Health is not throttled. See [DRF's throttling limitations](https://www.django-rest-framework.org/api-guide/throttling/).
+
+Blacklist records persist in the database. When deployment is introduced, schedule this command daily from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py flushexpiredtokens
+```
+
+Email verification, password reset, MFA, per-account throttling, immediate access-token revocation, and logout-all-devices are not implemented. Registration duplicate errors intentionally disclose username/email availability. CORS remains disabled. Production requires HTTPS and a separate deployment review. See [Simple JWT rotation and blacklist settings](https://django-rest-framework-simplejwt.readthedocs.io/en/stable/settings.html).
 
 ### PostgreSQL later
 
@@ -148,7 +263,7 @@ SQLite requires no separate server. Settings already accept `DB_ENGINE=postgresq
 
 ### Next development stage
 
-Design the user and data-ownership model before building conversation features. Then add registration and JWT endpoints with authentication tests, followed by problem/conversation models and backend-only Groq integration. The target flow remains extension -> HTTPS + JWT -> Django -> PostgreSQL/Groq. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
+Next design problem, conversation, and message models with user ownership and API isolation tests. Add backend-only Groq integration after that foundation is tested. The target flow remains extension -> HTTPS + JWT -> Django -> PostgreSQL/Groq. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
 
 ## Local backup and secrets
 
