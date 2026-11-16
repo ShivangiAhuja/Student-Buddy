@@ -4,7 +4,7 @@ Student Buddy is an existing Manifest V3 Chrome extension that provides AI codin
 
 ## Current status
 
-Phase 1: focused extension security and stability fixes are implemented, with automated regression tests. The existing panel and actions are preserved. `backend/` is currently empty; Django, authentication, persistent storage, quotas, and a dashboard are planned, not implemented.
+Phase 2: a minimal Django REST Framework backend now runs independently of the Chrome extension. It provides `GET /api/health/`, environment-based settings, SQLite, and automated tests. The extension is unchanged. JWT authentication, Groq integration, persistent conversations, quotas, and a dashboard remain planned.
 
 The legacy extension still calls Groq directly and saves a user-supplied API key in Chrome sync storage. This is a development prototype, not the intended production security model. The backend migration will remove frontend key storage and direct Groq requests.
 
@@ -12,18 +12,24 @@ The legacy extension still calls Groq directly and saves a user-supplied API key
 
 ```text
 Student Buddy/
-??? chrome-extension/
-?   ??? manifest.json     # Chrome permissions, worker, popup, injected files
-?   ??? background.js     # Groq requests and mentor/solution/correction prompts
-?   ??? content.js        # LeetCode extraction, floating panel, message rendering
-?   ??? popup.html        # Settings interface
-?   ??? popup.js          # Save legacy key and request history clearing
-?   ??? styles.css        # Floating panel appearance
-?   ??? icons/            # 16, 48, and 128 pixel icons
-??? backend/              # Reserved for Django; currently empty
-??? docs/phase-0-audit.md
-??? .gitignore
-??? README.md
++-- chrome-extension/      # Existing Chrome extension; runs independently
+|   +-- manifest.json      # Chrome configuration and permissions
+|   +-- background.js      # Legacy Groq requests
+|   +-- content.js         # Floating panel and LeetCode extraction
+|   +-- popup.html
+|   +-- popup.js
+|   +-- styles.css
+|   +-- icons/
++-- backend/
+|   +-- config/            # Settings and application entry points
+|   +-- core/              # Health endpoint and tests
+|   +-- manage.py
+|   +-- requirements.txt
+|   +-- .env.example       # Placeholders only
++-- docs/                  # Audit and security notes
++-- tests/                 # Extension tests
++-- .gitignore
++-- README.md
 ```
 
 ## Implemented in the source
@@ -76,17 +82,73 @@ node --check chrome-extension/popup.js
 
 Tests use Node's built-in runner and mock DOM, Chrome, and network APIs; no packages or API key are required. They do not run Chrome. See [Phase 1 notes and manual checks](docs/phase-1-security.md).
 
-## Next development stages
+## Run the backend separately (Windows PowerShell)
 
-Start with a minimal Django/DRF project and a local health endpoint, then add models, JWT authentication, backend Groq integration, and extension integration in small runnable steps. The target request flow is:
+The extension does not use this backend yet. You can run either independently.
 
-```text
-Chrome extension ? HTTPS + JWT ? Django REST Framework
-                                  ??? PostgreSQL
-                                  ??? Groq (backend environment key)
+Use these commands from a PowerShell terminal. The virtual environment and local `.env` have already been created in this workspace; the first two commands are also useful for a fresh checkout.
+
+```powershell
+Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy\backend'
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-SQLite is acceptable initially. PostgreSQL, deployment, and a dashboard follow later. See [the Phase 0 audit](docs/phase-0-audit.md) for verified limitations and migration priorities.
+The virtual environment isolates backend packages. Calling its Python directly avoids PowerShell activation-policy issues. `requirements.txt` pins Django 5.2.19, DRF 3.18.3, and python-dotenv 1.2.4, the versions installed and tested here.
+
+For a **fresh checkout only**, create local settings without overwriting an existing `.env`:
+
+```powershell
+if (-not (Test-Path -LiteralPath .env)) {
+    Copy-Item -LiteralPath .env.example -Destination .env
+    .\.venv\Scripts\python.exe -c "import secrets; from pathlib import Path; p = Path('.env'); p.write_text(p.read_text(encoding='utf-8').replace('replace-with-a-generated-secret-key', secrets.token_urlsafe(64)), encoding='utf-8')"
+}
+```
+
+This writes a fresh key to the ignored `.env` without printing it. If `.env` already exists, preserve it and ensure it has a real `DJANGO_SECRET_KEY`. The checked-in example deliberately cannot be used as a real key. Local development uses `DJANGO_DEBUG=true`; process environment variables override `.env` values. Never enable debug mode on a public deployment.
+
+Run the backend commands from the same `backend` directory:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py test
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+`check` validates configuration. `migrate` creates Django's built-in tables in ignored `backend/db.sqlite3`; it does not create Student Buddy conversation models or authentication endpoints. `test` runs the health API tests. `runserver` serves the local API; stop it with **Ctrl+C**. This server is for local development, not deployment.
+
+In a second PowerShell terminal, from any directory:
+
+```powershell
+Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/health/' -Method Get
+```
+
+Expected JSON (also viewable by opening that URL):
+
+```json
+{"status": "ok", "service": "student-buddy-backend"}
+```
+
+`/api/health/` is a public liveness check. It confirms the application can answer requests; it does not verify database readiness or any AI provider. The root `/` has no route and returns 404.
+
+### Backend structure and settings
+
+- `manage.py` runs Django management commands.
+- `config/settings.py` loads environment values, installed apps, middleware, and database settings. A missing or placeholder secret fails startup. Debug defaults off, allowed hosts default to loopback, and no CORS or proxy trust is enabled.
+- `config/urls.py` maps `/api/` to `core/urls.py`, which maps `health/` to the DRF view in `core/views.py`.
+- `core/tests.py` checks exact JSON, rejected write methods, and host validation. The tests deliberately prohibit database queries.
+- `config/wsgi.py` and `config/asgi.py` are standard entry points for later hosting; no hosting server dependency is installed yet.
+
+Only Django, DRF, and python-dotenv are direct dependencies. There is no JWT, Groq, PostgreSQL driver, CORS middleware, or extension integration in this phase. DRF defaults to requiring authenticated access for future views; health explicitly allows anonymous access. Django's standard authentication middleware is present, but no login or registration API exists.
+
+### PostgreSQL later
+
+SQLite requires no separate server. Settings already accept `DB_ENGINE=postgresql` and `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_SSLMODE`. When PostgreSQL is introduced, install and pin its `psycopg` driver, configure a real database, and run migrations against it. SSL defaults to `require` for that future connection. Existing SQLite data will not transfer automatically.
+
+### Next development stage
+
+Design the user and data-ownership model before building conversation features. Then add registration and JWT endpoints with authentication tests, followed by problem/conversation models and backend-only Groq integration. The target flow remains extension -> HTTPS + JWT -> Django -> PostgreSQL/Groq. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
 
 ## Local backup and secrets
 
