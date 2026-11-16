@@ -1,5 +1,8 @@
 // content.js - Injected into LeetCode pages
 
+let historyVersion = 0;
+let requestInFlight = false;
+let manualLanguage = false;
 let mentorPanel = null;
 let conversationHistory = [];
 let currentProblem = null;
@@ -40,15 +43,14 @@ function extractProblemInfo() {
     description: description.substring(0, 1500) // Increased from 500 to 1500
   };
   
-  console.log('Problem extracted:', currentProblem);
   
   return currentProblem;
 }
 // NEW: Extract the code template from LeetCode editor
 function extractCodeTemplate() {
   try {
-    // Wait a bit for editor to load
-    setTimeout(() => {
+    // Read available editor content immediately before sending a request.
+    currentCodeTemplate = '';
       // Try to get code from Monaco editor
       const editorContent = document.querySelector('.monaco-editor');
       if (editorContent) {
@@ -60,7 +62,6 @@ function extractCodeTemplate() {
             .join('\n')
             .trim();
           
-          console.log('Extracted code template:', currentCodeTemplate);
         }
       }
       
@@ -74,197 +75,49 @@ function extractCodeTemplate() {
           }
         }
       }
-    }, 2000);
   } catch (error) {
-    console.error('Error extracting code template:', error);
+    currentCodeTemplate = '';
   }
 }
 // Detect the programming language the user is using
-function detectLanguage() {
-  console.log('🔍 Starting language detection...');
-  
-  // Method 1: Check the actual code editor language via data attributes
-  try {
-    // Look for language indicators in multiple places
-    const editors = document.querySelectorAll('.monaco-editor, [class*="editor"]');
-    
-    for (const editor of editors) {
-      // Check data-mode-id attribute
-      const modeId = editor.getAttribute('data-mode-id') || 
-                     editor.getAttribute('data-language') ||
-                     editor.querySelector('[data-mode-id]')?.getAttribute('data-mode-id');
-      
-      if (modeId) {
-        console.log('Found data-mode-id:', modeId);
-        
-        const langMap = {
-          'cpp': 'C++',
-          'c': 'C',
-          'java': 'Java',
-          'python': 'Python',
-          'javascript': 'JavaScript',
-          'typescript': 'TypeScript',
-          'csharp': 'C#',
-          'go': 'Go',
-          'golang': 'Go',
-          'ruby': 'Ruby',
-          'swift': 'Swift',
-          'kotlin': 'Kotlin',
-          'rust': 'Rust',
-          'php': 'PHP',
-          'scala': 'Scala'
-        };
-        
-        if (langMap[modeId.toLowerCase()]) {
-          preferredLanguage = langMap[modeId.toLowerCase()];
-          console.log('✅ Detected from Monaco:', preferredLanguage);
-          return;
-        }
-      }
-    }
-  } catch (e) {
-    console.log('Monaco detection error:', e);
-  }
-  
-  // Method 2: Check the language selector button (improved selectors)
-  try {
-    // Try all possible button selectors
-    const selectors = [
-      'button[id*="headlessui-listbox-button"]',
-      'button[class*="rounded"][class*="items-center"]',
-      'div[class*="text-sm"] button',
-      '.text-label-2.dark\\:text-dark-label-2',
-      '[class*="language"] button'
-    ];
-    
-    for (const selector of selectors) {
-      const button = document.querySelector(selector);
-      if (button) {
-        const text = (button.innerText || button.textContent || '').trim();
-        console.log(`Checking button (${selector}):`, text);
-        
-        // Direct matching with the exact text shown
-        if (text === 'C++' || text.includes('C++')) {
-          preferredLanguage = 'C++';
-          console.log('✅ Detected C++ from button');
-          return;
-        } else if (text === 'C' && !text.includes('++') && !text.includes('#')) {
-          preferredLanguage = 'C';
-          console.log('✅ Detected C from button');
-          return;
-        } else if (text.includes('Java') && !text.includes('JavaScript')) {
-          preferredLanguage = 'Java';
-          console.log('✅ Detected Java from button');
-          return;
-        } else if (text.includes('Python')) {
-          preferredLanguage = 'Python';
-          console.log('✅ Detected Python from button');
-          return;
-        } else if (text.includes('JavaScript') || text === 'JS') {
-          preferredLanguage = 'JavaScript';
-          console.log('✅ Detected JavaScript from button');
-          return;
-        } else if (text.includes('TypeScript') || text === 'TS') {
-          preferredLanguage = 'TypeScript';
-          console.log('✅ Detected TypeScript from button');
-          return;
-        } else if (text.includes('C#')) {
-          preferredLanguage = 'C#';
-          console.log('✅ Detected C# from button');
-          return;
-        } else if (text === 'Go' || text.includes('Golang')) {
-          preferredLanguage = 'Go';
-          console.log('✅ Detected Go from button');
-          return;
-        }
-      }
-    }
-  } catch (e) {
-    console.log('Button detection error:', e);
-  }
-  
-  // Method 3: Analyze the actual code in the editor
-  try {
-    let codeText = '';
-    
-    // Try to get code from various editor implementations
-    const codeElements = document.querySelectorAll('.view-line, .view-lines span, [class*="code-line"]');
-    
-    for (let i = 0; i < Math.min(10, codeElements.length); i++) {
-      codeText += (codeElements[i].innerText || codeElements[i].textContent || '') + '\n';
-    }
-    
-    console.log('Code sample (first 200 chars):', codeText.substring(0, 200));
-    
-    // C++ detection patterns (very specific)
-    if (codeText.includes('vector<') || 
-        codeText.includes('#include') || 
-        codeText.includes('std::') ||
-        codeText.includes('unordered_map') ||
-        codeText.includes('public:') ||
-        codeText.match(/class\s+\w+\s*\{[\s\S]*public:/)) {
-      preferredLanguage = 'C++';
-      console.log('✅ Detected C++ from code patterns');
-      return;
-    }
-    
-    // Java detection patterns
-    if (codeText.includes('public class') || 
-        codeText.includes('public int') ||
-        codeText.includes('private ') ||
-        codeText.includes('ArrayList') ||
-        codeText.includes('HashMap')) {
-      preferredLanguage = 'Java';
-      console.log('✅ Detected Java from code patterns');
-      return;
-    }
-    
-    // Python detection patterns
-    if (codeText.includes('def ') || 
-        codeText.includes('class Solution:') ||
-        codeText.match(/def\s+\w+\(self/) ||
-        codeText.includes('List[') ||
-        codeText.includes('Dict[')) {
-      preferredLanguage = 'Python';
-      console.log('✅ Detected Python from code patterns');
-      return;
-    }
-    
-    // JavaScript detection patterns
-    if (codeText.includes('var ') || 
-        codeText.includes('const ') ||
-        codeText.includes('let ') ||
-        codeText.includes('function(') ||
-        codeText.includes('=>')) {
-      preferredLanguage = 'JavaScript';
-      console.log('✅ Detected JavaScript from code patterns');
-      return;
-    }
-    
-  } catch (e) {
-    console.log('Code analysis error:', e);
-  }
-  
-  console.log('⚠️ Could not detect language, defaulting to:', preferredLanguage);
+const languageAliases = {
+  cpp: 'C++', 'c++': 'C++', c: 'C', java: 'Java', python: 'Python', python3: 'Python',
+  javascript: 'JavaScript', typescript: 'TypeScript', csharp: 'C#', 'c#': 'C#',
+  go: 'Go', golang: 'Go', ruby: 'Ruby', swift: 'Swift', kotlin: 'Kotlin',
+  rust: 'Rust', php: 'PHP', scala: 'Scala'
+};
+function normalizeLanguage(value) {
+  return languageAliases[(value || '').trim().toLowerCase()] || null;
 }
-
-// Re-detect language periodically (in case user changes it)
-function startLanguageMonitoring() {
-  // Re-detect every 3 seconds
-  setInterval(() => {
-    const oldLang = preferredLanguage;
-    detectLanguage();
-    
-    if (oldLang !== preferredLanguage) {
-      console.log(`🔄 Language changed: ${oldLang} → ${preferredLanguage}`);
-      
-      // Update badge
-      const languageBadge = document.getElementById('sb-language-text');
-      if (languageBadge) {
-        languageBadge.textContent = preferredLanguage;
-      }
+function detectLanguage() {
+  if (manualLanguage) return;
+  let detected = null;
+  for (const editor of document.querySelectorAll('.monaco-editor [data-mode-id], .monaco-editor[data-mode-id], .monaco-editor[data-language]')) {
+    detected = normalizeLanguage(editor.getAttribute('data-mode-id') || editor.getAttribute('data-language'));
+    if (detected) break;
+  }
+  if (!detected) {
+    for (const button of document.querySelectorAll('button[id*="headlessui-listbox-button"], [class*="language"] button')) {
+      if (button.closest('#student-buddy-panel')) continue;
+      detected = normalizeLanguage(button.innerText || button.textContent);
+      if (detected) break;
     }
-  }, 3000);
+  }
+  if (!detected) {
+    const code = Array.from(document.querySelectorAll('.monaco-editor .view-line')).slice(0, 15).map(line => line.textContent).join('\n');
+    if (/\b(vector<|std::|unordered_map|public:)/.test(code)) detected = 'C++';
+    else if (/\bdef\s+\w+\s*\(|class Solution:/.test(code)) detected = 'Python';
+    else if (/\b(public class|public int|ArrayList|HashMap)\b/.test(code)) detected = 'Java';
+    else if (/\b(const|let|var)\s+\w+/.test(code)) detected = 'JavaScript';
+  }
+  if (detected) preferredLanguage = detected;
+  const badge = document.getElementById('sb-language-text');
+  const dropdown = document.getElementById('sb-language-dropdown');
+  if (badge) badge.textContent = preferredLanguage;
+  if (dropdown) dropdown.value = preferredLanguage;
+}
+function startLanguageMonitoring() {
+  setInterval(detectLanguage, 3000);
 }
 
 // Create the floating mentor panel
@@ -297,7 +150,7 @@ function createMentorPanel() {
         
         <div class="sb-problem-card">
           <div class="sb-problem-label">Problem:</div>
-          <div class="sb-problem-title">${currentProblem.title}</div>
+          <div class="sb-problem-title"></div>
           <div class="sb-language-selector">
             <div class="sb-language-badge" id="sb-language-badge">
               <span class="sb-language-icon">💻</span>
@@ -367,6 +220,7 @@ function createMentorPanel() {
     </div>
   `;
   
+  panel.querySelector('.sb-problem-title').textContent = currentProblem.title;
   document.body.appendChild(panel);
   mentorPanel = panel;
   
@@ -383,9 +237,9 @@ function createMentorPanel() {
     
     // Listen for manual language changes
     languageDropdown.addEventListener('change', (e) => {
+      manualLanguage = true;
       preferredLanguage = e.target.value;
       languageBadge.textContent = preferredLanguage;
-      console.log('🔄 Language manually changed to:', preferredLanguage);
     });
   }
   
@@ -428,6 +282,7 @@ function setupEventListeners() {
     }
   });
   
+  document.getElementById('sb-solution-btn').addEventListener('click', showSolution);
   // Send button
   document.getElementById('sb-send-btn').addEventListener('click', () => sendThought(0));
   
@@ -445,9 +300,8 @@ function setupEventListeners() {
       }, 200);
       
       // Track hint usage and update progress
-      hintsUsed++;
-      console.log('Hints used:', hintsUsed); // Debug log
-      updateProgress();
+
+
       
       // Send the hint request
       sendThought(level);
@@ -534,6 +388,8 @@ function togglePanel() {
 }
 
 async function sendThought(hintLevel) {
+  if (requestInFlight) return;
+  const version = historyVersion;
   const input = document.getElementById('sb-thought-input');
   const userThought = input.value.trim();
   
@@ -551,6 +407,7 @@ async function sendThought(hintLevel) {
   input.value = '';
   
   // Show loading
+  requestInFlight = true;
   showLoading(true);
   
   // Send to background script for API call
@@ -569,23 +426,25 @@ async function sendThought(hintLevel) {
       throw new Error(chrome.runtime.lastError.message);
     }
     
-    if (response && response.success) {
+    if (version !== historyVersion) return;
+    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
+      if (hintLevel > 0) { hintsUsed++; updateProgress(); }
       addMessageToChat('mentor', response.message);
       conversationHistory.push({ role: 'assistant', content: response.message });
     } else {
       addMessageToChat('error', response?.error || 'Failed to get response. Check your API key in settings.');
     }
   } catch (error) {
-    console.error('Message sending error:', error);
+    if (version !== historyVersion) return;
     addMessageToChat('error', `Connection error: ${error.message}. Try reloading the extension.`);
   }
   
-  showLoading(false);
+  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
 }
 
 // IMPROVED: Add messages with optional correction buttons
 function addMessageToChat(role, message, allowCorrection = false) {
-  const content = document.getElementById('sb-content');
+  const content = document.getElementById('sb-chat');
   if (!content) return;
   
   // Remove welcome message
@@ -600,11 +459,10 @@ function addMessageToChat(role, message, allowCorrection = false) {
   // Format message with markdown-like code blocks
   const formattedMessage = formatMessage(message);
   
-  messageDiv.innerHTML = `
-    <div class="sb-message-content">
-      ${formattedMessage}
-    </div>
-  `;
+  const messageContent = document.createElement('div');
+  messageContent.className = 'sb-message-content';
+  messageContent.appendChild(formattedMessage);
+  messageDiv.appendChild(messageContent);
   
   // Add correction buttons for solution messages - inside the content div
   if (allowCorrection && role === 'solution') {
@@ -614,12 +472,12 @@ function addMessageToChat(role, message, allowCorrection = false) {
     
     const wrongBtn = document.createElement('button');
     wrongBtn.className = 'sb-action-btn sb-wrong-btn';
-    wrongBtn.innerHTML = '❌ Wrong Answer - Get Correction';
+    wrongBtn.textContent = '❌ Wrong Answer - Get Correction';
     wrongBtn.onclick = function() { requestCorrection(); };
     
     const describeBtn = document.createElement('button');
     describeBtn.className = 'sb-action-btn sb-describe-btn';
-    describeBtn.innerHTML = '📝 Describe the Issue';
+    describeBtn.textContent = '📝 Describe the Issue';
     describeBtn.onclick = function() { requestCorrectionWithDetails(); };
     
     actionDiv.appendChild(wrongBtn);
@@ -628,111 +486,84 @@ function addMessageToChat(role, message, allowCorrection = false) {
   }
   
   content.appendChild(messageDiv);
+  const scroll = document.getElementById('sb-content');
+  scroll.scrollTop = scroll.scrollHeight;
   content.scrollTop = content.scrollHeight;
 }
+// Render a small Markdown subset without parsing any untrusted HTML.
+function appendInline(parent, text) {
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let start = 0;
+  for (const match of text.matchAll(pattern)) {
+    parent.appendChild(document.createTextNode(text.slice(start, match.index)));
+    const code = match[0].startsWith('`');
+    const node = document.createElement(code ? 'code' : 'strong');
+    if (code) node.className = 'sb-inline-code';
+    node.textContent = match[0].slice(code ? 1 : 2, code ? -1 : -2);
+    parent.appendChild(node);
+    start = match.index + match[0].length;
+  }
+  parent.appendChild(document.createTextNode(text.slice(start)));
+}
 function formatMessage(message) {
-  // Handle code blocks
-  let formatted = message.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-    const blockId = 'code-block-' + Math.random().toString(36).substr(2, 9);
-    
-    // Schedule the copy button event listener to be added after the element is in the DOM
-    setTimeout(() => {
-      const copyBtn = document.getElementById(blockId);
-      if (copyBtn) {
-        copyBtn.onclick = function() {
-          const codeBlock = copyBtn.closest('.sb-code-block');
-          const codeElement = codeBlock.querySelector('code');
-          // Use innerText to preserve whitespace/indentation
-          const codeText = codeElement.innerText;
-          
-          navigator.clipboard.writeText(codeText).then(() => {
-            copyBtn.textContent = '✅ Copied!';
-            setTimeout(() => {
-              copyBtn.textContent = '📋 Copy';
-            }, 2000);
-          }).catch(err => {
-            // Fallback for clipboard API failure
-            const textarea = document.createElement('textarea');
-            textarea.value = codeText;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            copyBtn.textContent = '✅ Copied!';
-            setTimeout(() => {
-              copyBtn.textContent = '📋 Copy';
-            }, 2000);
-          });
-        };
-      }
-    }, 50);
-    
-    return `<div class="sb-code-block">
-      <div class="sb-code-header">
-        <span class="sb-code-lang">${lang || 'code'}</span>
-        <button class="sb-copy-btn" id="${blockId}" title="Copy code">📋 Copy</button>
-      </div>
-      <pre><code>${escapeHtml(code.trim())}</code></pre>
-    </div>`;
-  });
-  
-  // Handle inline code
-  formatted = formatted.replace(/`([^`]+)`/g, '<code class="sb-inline-code">$1</code>');
-  
-  // Handle bold
-  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  
-  // Handle headers
-  formatted = formatted.replace(/^##\s+(.+)$/gm, '<h3 class="sb-heading">$1</h3>');
-  
-  // Handle bullet points
-  formatted = formatted.replace(/^•\s+(.+)$/gm, '<li>$1</li>');
-  formatted = formatted.replace(/(<li>.*<\/li>)+/g, '<ul class="sb-list">$&</ul>');
-  
-  // Handle line breaks
-  formatted = formatted.replace(/\n/g, '<br>');
-  
-  return formatted;
+  const fragment = document.createDocumentFragment();
+  const lines = String(message ?? '').replace(/\r\n/g, '\n').split('\n');
+  let list = null;
+  for (let i = 0; i < lines.length; i++) {
+    const fence = lines[i].match(/^```([^`]*)$/);
+    if (fence) {
+      list = null;
+      const codeLines = [];
+      while (++i < lines.length && !/^```\s*$/.test(lines[i])) codeLines.push(lines[i]);
+      const block = document.createElement('div'); block.className = 'sb-code-block';
+      const header = document.createElement('div'); header.className = 'sb-code-header';
+      const lang = document.createElement('span'); lang.className = 'sb-code-lang'; lang.textContent = fence[1] || 'code';
+      const button = document.createElement('button'); button.className = 'sb-copy-btn'; button.textContent = '\u{1f4cb} Copy';
+      const pre = document.createElement('pre'); const code = document.createElement('code');
+      code.textContent = codeLines.join('\n');
+      button.addEventListener('click', () => copyCodeText(code.textContent, button));
+      header.append(lang, button); pre.appendChild(code); block.append(header, pre); fragment.appendChild(block);
+      continue;
+    }
+    const bullet = lines[i].match(/^[\u2022*-]\s+(.+)$/);
+    const heading = lines[i].match(/^##\s+(.+)$/);
+    if (bullet) {
+      if (!list) { list = document.createElement('ul'); list.className = 'sb-list'; fragment.appendChild(list); }
+      const item = document.createElement('li'); appendInline(item, bullet[1]); list.appendChild(item);
+    } else {
+      list = null;
+      if (heading) {
+        const h = document.createElement('h3'); h.className = 'sb-heading'; appendInline(h, heading[1]); fragment.appendChild(h);
+      } else { appendInline(fragment, lines[i]); if (i < lines.length - 1) fragment.appendChild(document.createElement('br')); }
+    }
+  }
+  return fragment;
 }
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+async function copyCodeText(text, button) {
+  try {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const textarea = document.createElement('textarea'); textarea.value = text;
+      textarea.style.position = 'fixed'; textarea.style.opacity = '0'; document.body.appendChild(textarea);
+      try { textarea.select(); if (!document.execCommand('copy')) throw new Error('Copy failed'); }
+      finally { textarea.remove(); }
+    }
+    button.textContent = '\u2705 Copied!';
+  } catch { button.textContent = '\u274c Copy failed'; }
+  setTimeout(() => { button.textContent = '\u{1f4cb} Copy'; }, 2000);
 }
-
-// Copy code to clipboard
-window.copyCode = function(button) {
-  const codeBlock = button.closest('.sb-code-block');
-  const code = codeBlock.querySelector('code').textContent;
-  
-  navigator.clipboard.writeText(code).then(() => {
-    button.textContent = '✅ Copied!';
-    setTimeout(() => {
-      button.textContent = '📋 Copy';
-    }, 2000);
-  }).catch(err => {
-    console.error('Copy failed:', err);
-    button.textContent = '❌ Failed';
-  });
-};
-
-
 
 function showLoading(show) {
   document.getElementById('sb-loading').style.display = show ? 'flex' : 'none';
 }
 
 function updateProgress() {
-  console.log('updateProgress called, hintsUsed:', hintsUsed); // Debug
   
   const progressFill = document.getElementById('sb-progress-fill');
   const progressText = document.getElementById('sb-progress-text');
   const solutionSection = document.getElementById('sb-solution-section');
   
   if (!progressFill || !progressText || !solutionSection) {
-    console.error('Progress elements not found!');
     return;
   }
   
@@ -740,7 +571,6 @@ function updateProgress() {
   const progress = Math.min((hintsUsed / 3) * 100, 100);
   progressFill.style.width = progress + '%';
   
-  console.log('Progress:', progress + '%'); // Debug
   
   if (hintsUsed === 0) {
     progressText.textContent = '💡 Try hints first to learn better!';
@@ -756,39 +586,14 @@ function updateProgress() {
     solutionSection.style.display = 'block';
     solutionUnlocked = true;
     
-    console.log('Solution unlocked!'); // Debug
     
-    // Animate unlock
-    setTimeout(() => {
-      solutionSection.classList.add('sb-solution-unlocked');
-      
-      // CRITICAL: Attach event listener to the now-visible button
-      const solutionBtn = document.getElementById('sb-solution-btn');
-      if (solutionBtn) {
-        console.log('🔧 Attaching solution button listener NOW...');
-        
-        // Remove any existing listeners
-        const newBtn = solutionBtn.cloneNode(true);
-        solutionBtn.parentNode.replaceChild(newBtn, solutionBtn);
-        
-        // Attach fresh listener
-        newBtn.addEventListener('click', (e) => {
-          console.log('🔴 SOLUTION BUTTON CLICKED!');
-          e.preventDefault();
-          e.stopPropagation();
-          showSolution();
-        });
-        
-        console.log('✅ Solution button listener attached successfully');
-      } else {
-        console.error('❌ Solution button STILL not found after unlock!');
-      }
-    }, 100);
+    solutionSection.classList.add('sb-solution-unlocked');
   }
 }
 
 async function showSolution() {
-  console.log('=== SHOW SOLUTION CLICKED ===');
+  if (requestInFlight) return;
+  const version = historyVersion;
   
   const solutionBtn = document.getElementById('sb-solution-btn');
   if (!solutionBtn) return;
@@ -802,7 +607,8 @@ async function showSolution() {
   if (!confirmed) return;
   
   solutionBtn.disabled = true;
-  solutionBtn.innerHTML = '⏳ Getting solution...';
+  solutionBtn.textContent = '⏳ Getting solution...';
+  requestInFlight = true;
   showLoading(true);
   
   try {
@@ -826,10 +632,11 @@ async function showSolution() {
       });
     });
     
-    if (response && response.success) {
+    if (version !== historyVersion) return;
+    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
       lastSolutionCode = response.message; // Store for potential correction
       addMessageToChat('solution', response.message, true); // true = add correction buttons
-      solutionBtn.innerHTML = '✅ Solution Shown';
+      solutionBtn.textContent = '✅ Solution Shown';
       solutionBtn.style.opacity = '0.6';
       
       setTimeout(() => {
@@ -841,22 +648,24 @@ async function showSolution() {
     } else {
       addMessageToChat('error', response?.error || 'Failed to get solution');
       solutionBtn.disabled = false;
-      solutionBtn.innerHTML = 'Show Complete Solution';
+      solutionBtn.textContent = 'Show Complete Solution';
     }
   } catch (error) {
-    console.error('Solution error:', error);
+    if (version !== historyVersion) return;
     addMessageToChat('error', `Error: ${error.message}`);
     solutionBtn.disabled = false;
-    solutionBtn.innerHTML = 'Show Complete Solution';
+    solutionBtn.textContent = 'Show Complete Solution';
   }
   
-  showLoading(false);
+  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
 }
 
 // NEW: Request corrected solution
 async function requestCorrection(errorMessage = '') {
-  console.log('=== REQUESTING CORRECTION ===');
+  if (requestInFlight) return;
+  const version = historyVersion;
   
+  requestInFlight = true;
   showLoading(true);
   
   // Add user feedback to chat
@@ -888,7 +697,8 @@ async function requestCorrection(errorMessage = '') {
       });
     });
     
-    if (response && response.success) {
+    if (version !== historyVersion) return;
+    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
       lastSolutionCode = response.message; // Update with corrected solution
       addMessageToChat('solution', response.message, true); // Add with correction buttons
       
@@ -902,11 +712,11 @@ async function requestCorrection(errorMessage = '') {
       addMessageToChat('error', response?.error || 'Failed to get correction');
     }
   } catch (error) {
-    console.error('Correction error:', error);
+    if (version !== historyVersion) return;
     addMessageToChat('error', `Error: ${error.message}`);
   }
   
-  showLoading(false);
+  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
 }
 
 // NEW: Request correction with custom error description
@@ -919,17 +729,28 @@ function requestCorrectionWithDetails() {
 
 
 
+function clearConversation() {
+  historyVersion++;
+  requestInFlight = false;
+  conversationHistory = [];
+  hintsUsed = 0;
+  solutionUnlocked = false;
+  lastSolutionCode = '';
+  document.getElementById('sb-chat').replaceChildren();
+  document.getElementById('sb-thought-input').value = '';
+  const section = document.getElementById('sb-solution-section');
+  section.style.display = 'none'; section.classList.remove('sb-solution-unlocked');
+  const button = document.getElementById('sb-solution-btn');
+  button.disabled = false; button.textContent = '\u{1f513} Show Complete Solution'; button.style.opacity = '';
+  document.getElementById('sb-progress-fill').style.background = '';
+  showLoading(false);
+  updateProgress();
+}
 function setupMessageListener() {
-  // Listen for messages from popup or background
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'clearHistory') {
-      conversationHistory = [];
-      hintsUsed = 0;
-      solutionUnlocked = false;
-      document.getElementById('sb-chat').innerHTML = '';
-      document.getElementById('sb-solution-section').style.display = 'none';
-      updateProgress();
-      addMessageToChat('mentor', 'Conversation cleared! Ready for a fresh start? 🚀');
+    if (request?.action === 'clearHistory') {
+      clearConversation();
+      sendResponse({ success: true });
     }
   });
 }

@@ -1,295 +1,95 @@
-# 🎓 Student Buddy - AI Coding Mentor
+# Student Buddy
 
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue)](https://github.com/yourusername/student-buddy)
-[![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-yellow)](https://github.com/yourusername/student-buddy)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+Student Buddy is an existing Manifest V3 Chrome extension that provides AI coding guidance on LeetCode. It is being upgraded incrementally into a full-stack coding mentor.
 
-> An intelligent Chrome extension that helps students master competitive programming through AI-guided hints, code reviews, and personalized learning insights.
+## Current status
 
-[Demo Video](#) | [Installation](#installation) | [Features](#features) | [Tech Stack](#tech-stack)
+Phase 1: focused extension security and stability fixes are implemented, with automated regression tests. The existing panel and actions are preserved. `backend/` is currently empty; Django, authentication, persistent storage, quotas, and a dashboard are planned, not implemented.
 
----
+The legacy extension still calls Groq directly and saves a user-supplied API key in Chrome sync storage. This is a development prototype, not the intended production security model. The backend migration will remove frontend key storage and direct Groq requests.
 
-## 🌟 Problem Statement
+## Project layout
 
-**The Challenge:**
-- Students often struggle with LeetCode problems and jump straight to solutions
-- Copying solutions leads to poor understanding and interview failures
-- No personalized guidance during practice
-- Difficult to track learning progress
-
-**The Solution:**
-Student Buddy acts as an AI mentor that:
-- ✅ Provides **progressive hints** instead of direct solutions
-- ✅ Reviews code with **constructive feedback**
-- ✅ Tracks **learning progress** with detailed analytics
-- ✅ Suggests **related problems** for pattern recognition
-- ✅ Never gives away answers, promotes **genuine learning**
-
----
-
-## ✨ Key Features
-
-### 🤖 AI-Powered Progressive Hints
-- **3-Level Hint System**: Gentle → Stronger → Direct
-- Formatted with bullet points and highlighted keywords
-- Encourages critical thinking before revealing approach
-- Adapts to user's thought process
-
-### 🔍 Intelligent Code Review
-- Paste code or analyze from editor
-- Identifies: ✅ Strengths, ⚠️ Issues, 💡 Improvements
-- Checks correctness and edge cases
-- Analyzes time/space complexity
-- **Keyboard Shortcut**: `Ctrl+R`
-
-### 📚 Solution History
-- Automatically saves last 50 solutions
-- Tracks: time spent, hints used, language, date
-- Full conversation replay
-- Review past approaches anytime
-- **Keyboard Shortcut**: `Ctrl+H` (view), `Ctrl+S` (save)
-
-### 📊 Progress Analytics
-- Problems solved counter
-- Average hints per problem
-- Time tracking and trends
-- Personalized insights
-- Visual statistics dashboard
-- **Keyboard Shortcut**: `Ctrl+I`
-
-### 🔗 Related Problems Finder
-- AI suggests similar problems
-- Pattern-based recommendations
-- Progressive difficulty levels
-- Topic clustering
-- **Keyboard Shortcut**: `Ctrl+P`
-
-### 💻 Multi-Language Support
-- **14 Languages**: C++, Java, Python, JavaScript, TypeScript, C, C#, Go, Ruby, Swift, Kotlin, Rust, PHP, Scala
-- Auto-detection from editor
-- Manual override available
-- Solutions in YOUR language
-
-### ⚡ Power User Features
-- **9 Keyboard Shortcuts** for efficient workflow
-- Drag & drop panel positioning
-- Resizable interface
-- Dark coder theme
-- Quick action buttons
-
----
-## 🚀 Installation
-
-### Prerequisites
-- Google Chrome Browser (v90+)
-- Groq API Key (free tier available)
-
-### Step 1: Get Groq API Key
-1. Visit [console.groq.com](https://console.groq.com/keys)
-2. Sign up (free)
-3. Create API key
-4. Copy key (starts with `gsk_`)
-
-### Step 2: Install Extension
-1. **Download the repository**
-   ```bash
-   git clone https://github.com/yourusername/student-buddy.git
-   cd student-buddy
-   ```
-
-2. **Open Chrome Extensions**
-   - Navigate to `chrome://extensions/`
-   - Enable "Developer mode" (top-right toggle)
-
-3. **Load Extension**
-   - Click "Load unpacked"
-   - Select the `student-buddy` folder
-   - Extension appears in toolbar
-
-4. **Configure API Key**
-   - Click extension icon (🎓)
-   - Paste Groq API key
-   - Click "Save API Key"
-
-### Step 3: Start Using
-1. Navigate to any LeetCode problem
-2. Extension appears automatically
-3. Start solving with AI guidance!
-
----
-
-## 🏗️ Architecture
-
-### System Design
-
-```
-┌─────────────────────────────────────────┐
-│         LeetCode Page (DOM)             │
-│  ┌──────────────────────────────────┐   │
-│  │  Content Script (content.js)     │   │
-│  │  • UI Rendering                  │   │
-│  │  • Event Handling                │   │
-│  │  • Language Detection            │   │
-│  │  • Problem Extraction            │   │
-│  └───────────┬──────────────────────┘   │
-└──────────────┼──────────────────────────┘
-               │ Chrome Message API
-               ▼
-┌──────────────────────────────────────────┐
-│  Background Worker (background.js)       │
-│  • API Request Handler                   │
-│  • Groq AI Integration                   │
-│  • Response Processing                   │
-└───────────┬──────────────────────────────┘
-            │ HTTPS REST API
-            ▼
-┌──────────────────────────────────────────┐
-│        Groq AI API                       │
-│  • LLM: llama-3.3-70b-versatile         │
-│  • Processes prompts                     │
-│  • Returns structured responses          │
-└──────────────────────────────────────────┘
+```text
+Student Buddy/
+??? chrome-extension/
+?   ??? manifest.json     # Chrome permissions, worker, popup, injected files
+?   ??? background.js     # Groq requests and mentor/solution/correction prompts
+?   ??? content.js        # LeetCode extraction, floating panel, message rendering
+?   ??? popup.html        # Settings interface
+?   ??? popup.js          # Save legacy key and request history clearing
+?   ??? styles.css        # Floating panel appearance
+?   ??? icons/            # 16, 48, and 128 pixel icons
+??? backend/              # Reserved for Django; currently empty
+??? docs/phase-0-audit.md
+??? .gitignore
+??? README.md
 ```
 
-### Tech Stack
+## Implemented in the source
 
-**Frontend:**
-- HTML5/CSS3 (Modern UI with gradients & animations)
-- JavaScript ES6+ (Async/await, modules)
-- Chrome Extension APIs (Storage, Messaging, Tabs)
+- Floating, draggable mentor panel with minimize/expand control.
+- Problem title and description extraction using DOM selector fallbacks.
+- Automatic language detection and a dropdown with 14 language choices.
+- Three hint levels and submission of a student's thoughts.
+- Complete solution button unlocked after three successful hint requests.
+- Solution and correction prompts requesting explanations and complexity.
+- Correction requests with optional student-provided error details.
+- Code block formatting and copy buttons.
+- In-memory conversation messages; these are not persistent and are currently ignored by the AI prompt builder.
+- Ctrl+Shift+M (or Cmd+Shift+M) toggles the panel; Enter sends a thought.
 
-**Backend/APIs:**
-- Groq AI API (LLM integration)
-- REST API communication
-- JSON data exchange
+Analytics, saved solution history, related-problem recommendations, general code review, and the other shortcuts advertised in the previous README are not implemented. No measured learning-outcome statistics are available. No LICENSE file is currently present.
 
----
+## Load the extension locally
 
-## 🔧 Technical Implementation
+1. Open `chrome://extensions/` in Chrome and enable Developer mode.
+2. Click **Load unpacked** and select this project's **chrome-extension** folder.
+3. If the old root-folder installation is present, record its extension ID and remove it before loading the new folder. Chrome may assign a different ID, so existing settings may not carry over.
+4. Open a LeetCode problem page and refresh it. Expand the Student Buddy panel.
+5. The legacy AI flow requires a personal Groq key entered through the extension popup. Never put a key in source files, screenshots, or commits. Backend-only credentials will replace this flow in a later phase.
 
-### 1. Language Detection
-**3-Layer Detection System:**
+No build step or package installation is needed for the existing extension.
 
-```javascript
-// Layer 1: Monaco Editor attributes
-const modeId = editor.getAttribute('data-mode-id');
+## Manual checks after the move
 
-// Layer 2: Button text parsing
-const languageButton = document.querySelector('button[id*="listbox"]');
-const buttonText = languageButton.innerText; // "C++"
+- Check Chrome's extension error list and service worker console.
+- Verify icons, popup, key save status, panel toggle, dragging, and language dropdown.
+- Open a problem directly and confirm the displayed title.
+- With a personal development key, try each hint level and Send Thought.
+- After three hint clicks, request a solution; check code copying and both correction actions.
+- Try Clear Conversation History. Messages, in-memory history, draft input, and solution state should reset. Late responses to cleared requests should not reappear.
+- Refresh the page and confirm that conversation messages disappear (persistence is not implemented).
 
-// Layer 3: Code pattern analysis
-if (code.includes('vector<')) → C++
-if (code.includes('def ')) → Python
+These browser and live API checks have not been performed by Codex. Static checks cannot establish compatibility with the current LeetCode DOM or Groq service.
+
+## Phase 1 verification
+
+From PowerShell in `C:\Users\Shivangi Ahuja\Desktop\Student Buddy`:
+
+```powershell
+node --test tests/extension.test.cjs
+node --check chrome-extension/content.js
+node --check chrome-extension/background.js
+node --check chrome-extension/popup.js
 ```
 
-**Auto-Monitoring:**
-- Checks every 3 seconds for language changes
-- Updates UI badge automatically
-- No page refresh needed
+Tests use Node's built-in runner and mock DOM, Chrome, and network APIs; no packages or API key are required. They do not run Chrome. See [Phase 1 notes and manual checks](docs/phase-1-security.md).
 
-### 2. AI Prompt Engineering
+## Next development stages
 
-**Hint System:**
-```javascript
-// Level 1 (Gentle):
-"• Have you considered using a **hash map**?"
-"• What **data structure** allows O(1) lookups?"
+Start with a minimal Django/DRF project and a local health endpoint, then add models, JWT authentication, backend Groq integration, and extension integration in small runnable steps. The target request flow is:
 
-// Level 2 (Stronger):
-"• Try using a **two-pointer** approach"
-"• Store **previously seen values** in a map"
-
-// Level 3 (Direct):
-"1. Create a **hash map** to store values"
-"2. Loop through array **once**"
-"3. Check if **complement** exists"
+```text
+Chrome extension ? HTTPS + JWT ? Django REST Framework
+                                  ??? PostgreSQL
+                                  ??? Groq (backend environment key)
 ```
 
-**Formatting Enforcement:**
-```javascript
-system_prompt: "You MUST use bullet points (•)
-                You MUST use **bold** for keywords
-                You MUST format with numbers for steps"
-```
+SQLite is acceptable initially. PostgreSQL, deployment, and a dashboard follow later. See [the Phase 0 audit](docs/phase-0-audit.md) for verified limitations and migration priorities.
 
-### 3. Code Review Engine
+## Local backup and secrets
 
-**Analysis Categories:**
-```javascript
-Review Format:
-├── ✅ What's Working Well
-├── ⚠️ Issues Found
-├── 💡 Suggestions
-├── 🎯 Correctness (Yes/No/Partial)
-└── ⏱️ Complexity (Time & Space)
-```
+A pre-move copy of the extension, README, and ignore file is stored in `.local-backups/`, which Git ignores. Git also preserves the committed pre-move source. No commit or push was made during Phase 0.
 
-**Implementation:**
-```javascript
-async function reviewCode() {
-  const code = getCodeFromEditor();
-  const response = await callGroqAPI({
-    code: code,
-    language: detectedLanguage,
-    problem: currentProblem
-  });
-  return formatReview(response);
-}
-```
-
-## 🎓 Learning Outcomes
-
-Students using this extension experience:
-- ✅ **60% reduction** in direct solution views
-- ✅ **40% improvement** in problem-solving time
-- ✅ **Better understanding** of algorithms
-- ✅ **Increased confidence** in interviews
-- ✅ **Pattern recognition** skills
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-## 👨‍💻 Author
-
-**Your Name**
-- GitHub: [ShivangiAhuja](https://github.com/ShivangiAhuja)
-- LinkedIn: [Shivangi Ahuja](https://linkedin.com/in/shivangiahuja2210)
-- Email: shivangiahuja2210@gmail.com
-- Portfolio: [shivangiahuja.vercel.com](https://shivangiahuja.vercel.app/)
-
----
-
-## 🙏 Acknowledgments
-
-- [Groq](https://groq.com) for fast AI inference
-- [LeetCode](https://leetcode.com) for the platform
-- Open source community for inspiration
-- All users providing valuable feedback
-
----
-
-## 💬 Feedback
-
-Found this helpful? ⭐ Star this repo!
-
-Have suggestions? [Open an issue](https://github.com/yourusername/student-buddy/issues)
-
-Want to discuss? [Start a discussion](https://github.com/yourusername/student-buddy/discussions)
-
----
-
-
-<div align="center">
-
-**Made with ❤️ by students, for students**
-
-⭐ Star this repo if you found it helpful! ⭐
-
-</div>
+`.env` and `.env.*` are ignored; `.env.example` is allowed. Future environment examples must contain placeholders only. Virtual environments, Python bytecode, and local SQLite databases are ignored.

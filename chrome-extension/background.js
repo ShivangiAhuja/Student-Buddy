@@ -2,56 +2,38 @@
 
 const GROQ_API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
-// Keep service worker alive
-chrome.runtime.onStartup.addListener(() => {
-  console.log('Student Buddy extension started');
-});
-
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Student Buddy extension installed');
-});
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Message received:', request.action);
   
-  if (request.action === 'getMentorResponse') {
+  if (request?.action === 'getMentorResponse') {
     handleMentorRequest(request.data)
       .then(response => {
-        console.log('Sending response:', response);
         sendResponse(response);
       })
       .catch(error => {
-        console.error('Error in handler:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: 'Unable to process this request. Check extension settings and try again.' });
       });
     return true;
   }
   
-  if (request.action === 'getSolution') {
-    console.log('getSolution action received in background');
+  if (request?.action === 'getSolution') {
     handleSolutionRequest(request.data)
       .then(response => {
-        console.log('Sending solution response:', response);
         sendResponse(response);
       })
       .catch(error => {
-        console.error('Error in solution handler:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: 'Unable to process this request. Check extension settings and try again.' });
       });
     return true;
   }
   
   // NEW: Handle correction requests
-  if (request.action === 'correctSolution') {
-    console.log('correctSolution action received');
+  if (request?.action === 'correctSolution') {
     handleCorrectionRequest(request.data)
       .then(response => {
-        console.log('Sending correction response:', response);
         sendResponse(response);
       })
       .catch(error => {
-        console.error('Error in correction handler:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: 'Unable to process this request. Check extension settings and try again.' });
       });
     return true;
   }
@@ -73,31 +55,15 @@ async function handleMentorRequest(data) {
   const messages = buildMessages(problem, userThought, hintLevel, history);
   
   try {
-    console.log('Sending request to Groq API...');
     
-    const response = await fetch(GROQ_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
+    const mentorMessage = await requestGroq(apiKey, {
         model: 'llama-3.3-70b-versatile',
         messages: messages,
         temperature: 0.4,
         max_tokens: 1500,
         top_p: 1,
         stream: false
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
-    }
-    
-    const responseData = await response.json();
-    const mentorMessage = responseData.choices[0].message.content;
+      });
     
     if (!mentorMessage || mentorMessage.trim() === '') {
       throw new Error('AI response was empty. Please try again.');
@@ -109,7 +75,6 @@ async function handleMentorRequest(data) {
     };
     
   } catch (error) {
-    console.error('Groq API Error:', error);
     return {
       success: false,
       error: `API Error: ${error.message}`
@@ -175,9 +140,6 @@ function buildUserPrompt(problem, userThought, hintLevel) {
 async function handleSolutionRequest(data) {
   const { problem, language, codeTemplate } = data;
   
-  console.log('handleSolutionRequest called with problem:', problem);
-  console.log('Requested language:', language || 'Python (default)');
-  console.log('Code template:', codeTemplate);
   
   const result = await chrome.storage.sync.get(['apiKey']);
   const apiKey = result.apiKey;
@@ -263,31 +225,15 @@ Remember: Complete the function body inside the existing class structure. Do not
   ];
   
   try {
-    console.log('Making API request to Groq...');
     
-    const response = await fetch(GROQ_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
+    const solution = await requestGroq(apiKey, {
         model: 'llama-3.3-70b-versatile',
         messages: messages,
         temperature: 0.1,
         max_tokens: 4000,
         top_p: 0.95,
         stream: false
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API request failed`);
-    }
-    
-    const responseData = await response.json();
-    const solution = responseData.choices[0].message.content;
+      });
     
     return {
       success: true,
@@ -295,7 +241,6 @@ Remember: Complete the function body inside the existing class structure. Do not
     };
     
   } catch (error) {
-    console.error('Solution fetch error:', error);
     return {
       success: false,
       error: `Failed to get solution: ${error.message}`
@@ -307,8 +252,6 @@ Remember: Complete the function body inside the existing class structure. Do not
 async function handleCorrectionRequest(data) {
   const { problem, language, previousSolution, errorMessage, codeTemplate } = data;
   
-  console.log('handleCorrectionRequest called');
-  console.log('Previous solution had error:', errorMessage);
   
   const result = await chrome.storage.sync.get(['apiKey']);
   const apiKey = result.apiKey;
@@ -377,29 +320,14 @@ Please provide a CORRECTED solution that fixes the errors. Analyze the logic car
   ];
   
   try {
-    const response = await fetch(GROQ_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
+    const correctedSolution = await requestGroq(apiKey, {
         model: 'llama-3.3-70b-versatile',
         messages: messages,
         temperature: 0.1,
         max_tokens: 4000,
         top_p: 0.95,
         stream: false
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'API request failed');
-    }
-    
-    const responseData = await response.json();
-    const correctedSolution = responseData.choices[0].message.content;
+      });
     
     return {
       success: true,
@@ -408,10 +336,47 @@ Please provide a CORRECTED solution that fixes the errors. Analyze the logic car
     };
     
   } catch (error) {
-    console.error('Correction fetch error:', error);
     return {
       success: false,
       error: `Failed to get correction: ${error.message}`
     };
+  }
+}
+
+// Shared bounded request handling for hints, solutions, and corrections.
+async function requestGroq(apiKey, payload, timeoutMs = 25000) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try {
+    const response = await fetch(GROQ_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    // Do not surface provider bodies: they may echo sensitive request data.
+    if (!response.ok) {
+      const messages = {
+        401: 'API key was rejected. Check extension settings.',
+        403: 'API access was denied.',
+        429: 'Request limit reached. Please wait before trying again.'
+      };
+      throw new Error(messages[response.status] || `AI service failed (HTTP ${response.status}). Try again later.`);
+    }
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error('AI service returned invalid JSON. Please try again.'); }
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new Error('AI service returned an empty or malformed response. Please try again.');
+    }
+    return text;
+  } catch (error) {
+    if (timedOut) throw new Error('AI request timed out. Please try again.');
+    if (error instanceof TypeError) throw new Error('Could not reach the AI service. Check your connection.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }

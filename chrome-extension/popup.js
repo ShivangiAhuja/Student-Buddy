@@ -18,10 +18,10 @@ function setupEventListeners() {
 }
 
 async function loadSettings() {
-  const result = await chrome.storage.sync.get(['apiKey']);
-  if (result.apiKey) {
-    document.getElementById('apiKey').value = result.apiKey;
-  }
+  try {
+    const result = await chrome.storage.sync.get(['apiKey']);
+    if (result.apiKey) document.getElementById('apiKey').value = result.apiKey;
+  } catch { showStatus('Could not load settings. Please reopen the popup.', 'error'); }
 }
 
 async function saveApiKey() {
@@ -63,8 +63,9 @@ async function clearHistory() {
     // Send message to content script to clear history
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    if (tab.url.includes('leetcode.com')) {
-      await chrome.tabs.sendMessage(tab.id, { action: 'clearHistory' });
+    if (tab?.id && /^https:\/\/(www\.)?leetcode\.com\/problems\//.test(tab.url || '')) {
+      const result = await chrome.tabs.sendMessage(tab.id, { action: 'clearHistory' });
+      if (!result?.success) throw new Error('History clearing was not acknowledged');
       showStatus('✅ Conversation history cleared!', 'success');
     } else {
       showStatus('⚠️ Please open a LeetCode problem page', 'error');
