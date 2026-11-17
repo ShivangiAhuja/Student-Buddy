@@ -1,0 +1,27 @@
+ README.md                                        |  69 [32m++++++++[m[31m-[m
+ backend/.env.example                             |   5 [32m+[m
+ backend/config/settings.py                       |   8 [32m++[m
+ backend/config/urls.py                           |   2 [32m+[m
+ backend/conversations/__init__.py                |   0
+ backend/conversations/apps.py                    |   6 [32m+[m
+ backend/conversations/migrations/0001_initial.py |  72 [32m++++++++++[m
+ backend/conversations/migrations/__init__.py     |   0
+ backend/conversations/models.py                  |  46 [32m++++++[m
+ backend/conversations/serializers.py             |  31 [32m++++[m
+ backend/conversations/services.py                |  50 [32m+++++++[m
+ backend/conversations/tests.py                   | 173 [32m+++++++++++++++++++++++[m
+ backend/conversations/urls.py                    |   9 [32m++[m
+ backend/conversations/views.py                   |  55 [32m+++++++[m
+ backend/core/api.py                              |  37 [32m+++++[m
+ backend/problems/__init__.py                     |   0
+ backend/problems/apps.py                         |   6 [32m+[m
+ backend/problems/migrations/0001_initial.py      |  30 [32m++++[m
+ backend/problems/migrations/__init__.py          |   0
+ backend/problems/models.py                       |  22 [32m+++[m
+ backend/problems/serializers.py                  |  25 [32m++++[m
+ backend/problems/tests.py                        | 111 [32m+++++++++++++++[m
+ backend/problems/urls.py                         |   8 [32m++[m
+ backend/problems/validators.py                   |  30 [32m++++[m
+ backend/problems/views.py                        |  35 [32m+++++[m
+ docs/phase-4-conversations.md                    | 120 [32m++++++++++++++++[m
+ 26 files changed, 947 insertions(+), 3 deletions(-)
