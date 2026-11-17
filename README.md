@@ -4,7 +4,7 @@ Student Buddy is an existing Manifest V3 Chrome extension that provides AI codin
 
 ## Current status
 
-Phase 3: the standalone backend provides registration, JWT login and refresh, the signed-in user profile, and authenticated refresh-token logout. Health, SQLite, and the extension remain intact. Backend Groq integration, persistent conversations, quotas, and the dashboard remain planned.
+Phase 4: the standalone backend now stores shared LeetCode problem metadata and private, user-owned conversations and ordered messages. JWT authentication and health checks remain intact. The extension is unchanged and still has its own in-memory chat. Backend Groq integration, extension integration, quotas, and the dashboard remain planned.
 
 The legacy extension still calls Groq directly and saves a user-supplied API key in Chrome sync storage. This is a development prototype, not the intended production security model. The backend migration will remove frontend key storage and direct Groq requests.
 
@@ -24,6 +24,8 @@ Student Buddy/
 |   +-- config/            # Settings and application entry points
 |   +-- core/              # Health endpoint and tests
 |   +-- accounts/          # Registration, JWT APIs, email index, and tests
+|   +-- problems/          # Canonical problem metadata and APIs
+|   +-- conversations/     # Owned conversations and private message services
 |   +-- manage.py
 |   +-- requirements.txt
 |   +-- .env.example       # Placeholders only
@@ -117,7 +119,7 @@ Run the backend commands from the same `backend` directory:
 .\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
 ```
 
-`check` validates configuration. `migrate` creates Django's built-in tables, the email index, and JWT blacklist tables in ignored `backend/db.sqlite3`; no conversation models are created. `test` runs account and health API tests in an isolated temporary test database. `runserver` serves the local API; stop it with **Ctrl+C**. This server is for local development, not deployment.
+`check` validates configuration. `migrate` creates Django's built-in tables, the email index, JWT blacklist tables, and problem/conversation/message tables in ignored `backend/db.sqlite3`. `test` runs all backend tests in an isolated temporary test database. `runserver` serves the local API; stop it with **Ctrl+C**. This server is for local development, not deployment.
 
 In a second PowerShell terminal, from any directory:
 
@@ -257,13 +259,74 @@ Blacklist records persist in the database. When deployment is introduced, schedu
 
 Email verification, password reset, MFA, per-account throttling, immediate access-token revocation, and logout-all-devices are not implemented. Registration duplicate errors intentionally disclose username/email availability. CORS remains disabled. Production requires HTTPS and a separate deployment review. See [Simple JWT rotation and blacklist settings](https://django-rest-framework-simplejwt.readthedocs.io/en/stable/settings.html).
 
+## Problems and conversations (Phase 4)
+
+All new endpoints require `Authorization: Bearer <access-token>`. Problems are shared metadata; conversations and messages are private to their owner. Full schema, service design, limits, examples, and future integration details are in [Phase 4 documentation](docs/phase-4-conversations.md).
+
+| Method and URL | Behavior |
+| --- | --- |
+| `POST /api/problems/` | Submit `title`, `url`, `statement`; `201` for a new problem or `200` for an existing canonical URL |
+| `GET /api/problems/{id}/` | Retrieve shared problem metadata |
+| `POST /api/conversations/` | Submit `problem_id` and `language`; returns `201`, owned by the signed-in user |
+| `GET /api/conversations/` | List only your conversations, 20 per page |
+| `GET /api/conversations/{id}/` | Conversation plus up to 50 latest messages in sequence order; includes `messages_truncated` |
+| `DELETE /api/conversations/{id}/` | Delete your conversation and its messages; returns `204` |
+| `GET /api/conversations/{id}/messages/` | All messages through 20-item pages in ascending sequence order |
+
+Problem URLs normalize to `https://leetcode.com/problems/<slug>/`. Supported HTTP/HTTPS, www, case, page-tab, query, and fragment variants reuse the same record. Other hosts, credentials, unexpected ports, invalid slugs, and unsupported paths return `400`. No URL is fetched, and existence on LeetCode is not verified. Submitting an existing problem does not overwrite its title or statement. Do not include personal information in shared metadata.
+
+Conversation detail/messages/delete return `404` for another user's ID. Unknown creation fields, including `owner`, `messages`, or `role`, return `400`. There is no public message-writing endpoint; assistant messages can only originate from trusted backend services. Both roles can be persisted through `conversations.services.append_message`, and `get_history` returns bounded chronological context for future AI calls. No AI calls happen yet.
+
+Creation APIs accept JSON only, with a default 65,536-byte body limit (`413` if exceeded). Field limits: 255-character title, 30,000-character statement, 8,000-character private message. New request scopes default to 60 problem requests/minute and 120 conversation requests/minute per user, shared across their reads and writes. These use the existing local-memory throttling infrastructure.
+
+New optional `.env` settings (defaults work without editing your current `.env`):
+
+```dotenv
+PROBLEM_REQUEST_RATE=60/minute
+CONVERSATION_REQUEST_RATE=120/minute
+API_MAX_BODY_BYTES=65536
+HISTORY_MAX_MESSAGES=20
+HISTORY_MAX_CHARACTERS=24000
+```
+
+Run from PowerShell:
+
+```powershell
+Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy\backend'
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test --verbosity 2
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+In another terminal, log in using the earlier examples, then use the current `$studentHeaders` before logging out:
+
+```powershell
+$problemBody = @{
+    title = 'Two Sum'
+    url = 'https://leetcode.com/problems/two-sum/description/?source=practice'
+    statement = 'Given an array of integers and a target, return indices of two numbers whose sum is the target.'
+} | ConvertTo-Json
+$problemRecord = Invoke-RestMethod -Uri "$apiBase/problems/" -Method Post -Headers $studentHeaders -ContentType 'application/json' -Body $problemBody
+$conversationBody = @{ problem_id = $problemRecord.id; language = 'Python' } | ConvertTo-Json
+$conversationRecord = Invoke-RestMethod -Uri "$apiBase/conversations/" -Method Post -Headers $studentHeaders -ContentType 'application/json' -Body $conversationBody
+Invoke-RestMethod -Uri "$apiBase/conversations/" -Headers $studentHeaders
+Invoke-RestMethod -Uri "$apiBase/conversations/$($conversationRecord.id)/" -Headers $studentHeaders
+Invoke-RestMethod -Uri "$apiBase/conversations/$($conversationRecord.id)/messages/" -Headers $studentHeaders
+# Optional: permanently delete this owned conversation and its messages.
+# Invoke-RestMethod -Uri "$apiBase/conversations/$($conversationRecord.id)/" -Method Delete -Headers $studentHeaders
+```
+
+New conversations are empty until trusted backend code appends messages. The Chrome extension does not populate this database yet. PostgreSQL and concurrent multi-worker behavior have not been exercised here; SQLite may return lock errors under contention, and callers must handle/retry failed transactions without claiming a successful write.
+
 ### PostgreSQL later
 
 SQLite requires no separate server. Settings already accept `DB_ENGINE=postgresql` and `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, and `DB_SSLMODE`. When PostgreSQL is introduced, install and pin its `psycopg` driver, configure a real database, and run migrations against it. SSL defaults to `require` for that future connection. Existing SQLite data will not transfer automatically.
 
 ### Next development stage
 
-Next design problem, conversation, and message models with user ownership and API isolation tests. Add backend-only Groq integration after that foundation is tested. The target flow remains extension -> HTTPS + JWT -> Django -> PostgreSQL/Groq. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
+Next add a backend-only mentor orchestration service using owned conversations, bounded history, mocked Groq tests, timeouts, and usage limits. Keep trusted prompt instructions separate from untrusted problem/student text. Integrate the Chrome extension only after the backend flow is tested. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
 
 ## Local backup and secrets
 

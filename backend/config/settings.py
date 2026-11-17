@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.messages", "django.contrib.staticfiles", "rest_framework", "core",
     "rest_framework_simplejwt.token_blacklist", "accounts",
+    "problems", "conversations",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -92,6 +93,8 @@ REST_FRAMEWORK = {
         "login": os.getenv("AUTH_LOGIN_RATE", "10/minute"),
         "refresh": os.getenv("AUTH_REFRESH_RATE", "30/minute"),
         "logout": os.getenv("AUTH_LOGOUT_RATE", "30/minute"),
+        "problems": os.getenv("PROBLEM_REQUEST_RATE", "60/minute"),
+        "conversations": os.getenv("CONVERSATION_REQUEST_RATE", "120/minute"),
     },
     # Do not let untrusted X-Forwarded-For headers bypass IP throttles.
     "NUM_PROXIES": 0,
@@ -106,6 +109,11 @@ def env_positive_int(name, default):
     if value <= 0:
         raise ImproperlyConfigured(f"{name} must be a positive integer.")
     return value
+
+
+API_MAX_BODY_BYTES = env_positive_int("API_MAX_BODY_BYTES", 65536)
+HISTORY_MAX_MESSAGES = env_positive_int("HISTORY_MAX_MESSAGES", 20)
+HISTORY_MAX_CHARACTERS = env_positive_int("HISTORY_MAX_CHARACTERS", 24000)
 
 
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "").strip()
