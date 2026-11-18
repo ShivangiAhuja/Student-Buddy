@@ -3,6 +3,9 @@
 let historyVersion = 0;
 let requestInFlight = false;
 let manualLanguage = false;
+let retryAction = null;
+let lastRoute = '';
+let pendingOldProblem = null;
 let mentorPanel = null;
 let conversationHistory = [];
 let currentProblem = null;
@@ -16,35 +19,106 @@ function init() {
   extractProblemInfo();
   detectLanguage();
   extractCodeTemplate();
-  startLanguageMonitoring();
   createMentorPanel();
   setupMessageListener();
+  startLanguageMonitoring();
+  lastRoute = canonicalPageURL();
+  setInterval(monitorContext, 800);
+  restoreConversation();
 }
-
-// Extract problem details from the page
+function canonicalPageURL() {
+  try {
+    const url = new URL(location.href);
+    const slug = url.pathname.match(/^\/problems\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/|$)/i)?.[1];
+    return slug ? `https://leetcode.com/problems/${slug.toLowerCase()}/` : '';
+  } catch { return ''; }
+}
 function extractProblemInfo() {
-  // Try multiple selectors for title
-  const titleElement = document.querySelector('[data-cy="question-title"]') || 
-                       document.querySelector('.text-title-large') ||
-                       document.querySelector('[class*="text-title"]') ||
-                       document.querySelector('div[class*="title"]');
-  
-  // Try multiple selectors for description
-  const descElement = document.querySelector('[data-track-load="description_content"]') ||
-                      document.querySelector('.elfjS') ||
-                      document.querySelector('[class*="description"]') ||
-                      document.querySelector('.question-content');
-  
-  const title = titleElement?.innerText || 'Unknown Problem';
-  const description = descElement?.innerText || 'No description found';
-  
-  currentProblem = {
-    title: title,
-    description: description.substring(0, 1500) // Increased from 500 to 1500
-  };
-  
-  
+  const firstOutsidePanel = selector => Array.from(document.querySelectorAll(selector)).find(node => !node.closest('#student-buddy-panel'));
+  const titleElement = firstOutsidePanel('[data-cy="question-title"], .text-title-large, [class*="text-title"]');
+  const descElement = firstOutsidePanel('[data-track-load="description_content"], .elfjS, .question-content');
+  const title = (titleElement?.innerText || titleElement?.textContent || '').trim();
+  const description = (descElement?.innerText || descElement?.textContent || '').trim();
+  const url = canonicalPageURL();
+  if (!url || !title || !description || title.length > 255 || description.length > 30000) {
+    currentProblem = null;
+    return null;
+  }
+  const titleLink = titleElement.closest('a[href]');
+  if (titleLink && new URL(titleLink.href, location.href).pathname.split('/')[2] !== new URL(url).pathname.split('/')[2]) {
+    currentProblem = null;
+    return null;
+  }
+  if (pendingOldProblem && (title === pendingOldProblem.title || description === pendingOldProblem.description)) {
+    currentProblem = null;
+    return null;
+  }
+  pendingOldProblem = null;
+  currentProblem = { title, description, url };
+  const label = document.querySelector('#student-buddy-panel .sb-problem-title');
+  if (label) label.textContent = title;
   return currentProblem;
+}
+function monitorContext() {
+  const route = canonicalPageURL();
+  if (route !== lastRoute) {
+    pendingOldProblem = currentProblem;
+    lastRoute = route;
+    currentProblem = null;
+    manualLanguage = false;
+    clearConversation();
+    setPanelStatus('Problem changed. Waiting for its title and statement...');
+  }
+  if (!currentProblem && extractProblemInfo()) {
+    detectLanguage();
+    restoreConversation();
+  }
+}
+function switchLanguageContext() {
+  clearConversation();
+  restoreConversation();
+}
+function setPanelStatus(text) {
+  const status = document.getElementById('sb-session-status');
+  if (status) status.textContent = text;
+}
+function contextData() {
+  if (!currentProblem) throw new Error('Problem data is missing or changed. Wait for LeetCode to load, then reload saved history.');
+  return { problem: { ...currentProblem }, language: preferredLanguage };
+}
+async function restoreConversation() {
+  const version = ++historyVersion;
+  if (!currentProblem) { setPanelStatus('Waiting for LeetCode problem data...'); return; }
+  requestInFlight = true;
+  setPanelStatus('Loading saved conversation...');
+  try {
+    const captured = contextData();
+    const response = await chrome.runtime.sendMessage({ action: 'mentorRecover', data: captured });
+    if (version !== historyVersion || captured.problem.url !== canonicalPageURL() || captured.language !== preferredLanguage) return;
+    if (!response?.success) throw new Error(response?.error || 'Could not load saved history.');
+    document.getElementById('sb-chat').replaceChildren();
+    hintsUsed = 0;
+    let previousUser = '';
+    for (const message of response.messages) {
+      if (message.role === 'user') {
+        previousUser = message.content;
+        if (/^Mentor request: hint level [123]\n/.test(previousUser)) hintsUsed++;
+        addMessageToChat('user', message.content);
+      } else {
+        const solution = /^Mentor request: (hint level 4|solution)\n/.test(previousUser);
+        if (solution) lastSolutionCode = message.content;
+        addMessageToChat(solution ? 'solution' : 'mentor', message.content, solution);
+      }
+    }
+    updateProgress();
+    if (response.pendingAction) {
+      retryAction = { ...captured, ...response.pendingAction };
+      document.getElementById('sb-retry-btn').hidden = false;
+    }
+    setPanelStatus(response.truncated ? 'Showing the latest 50 saved messages.' : response.missing ? 'Saved conversation is unavailable. Your next action starts a new one.' : response.conversationId ? 'Saved conversation restored.' : 'Ready. Your next action starts a conversation.');
+    if (response.pendingAction) setPanelStatus('A previous request has an uncertain result. Retry request checks the same action without creating a new turn.');
+  } catch (error) { if (version === historyVersion) setPanelStatus(error.message || 'Could not load saved history.'); }
+  finally { if (version === historyVersion) { requestInFlight = false; showLoading(false); } }
 }
 // NEW: Extract the code template from LeetCode editor
 function extractCodeTemplate() {
@@ -91,6 +165,7 @@ function normalizeLanguage(value) {
 }
 function detectLanguage() {
   if (manualLanguage) return;
+  const previousLanguage = preferredLanguage;
   let detected = null;
   for (const editor of document.querySelectorAll('.monaco-editor [data-mode-id], .monaco-editor[data-mode-id], .monaco-editor[data-language]')) {
     detected = normalizeLanguage(editor.getAttribute('data-mode-id') || editor.getAttribute('data-language'));
@@ -115,6 +190,7 @@ function detectLanguage() {
   const dropdown = document.getElementById('sb-language-dropdown');
   if (badge) badge.textContent = preferredLanguage;
   if (dropdown) dropdown.value = preferredLanguage;
+  if (mentorPanel && previousLanguage !== preferredLanguage) switchLanguageContext();
 }
 function startLanguageMonitoring() {
   setInterval(detectLanguage, 3000);
@@ -144,7 +220,7 @@ function createMentorPanel() {
           <div class="sb-welcome-emoji">👋</div>
           <div class="sb-welcome-text">
             <h2>Hi! I'm your AI mentor.</h2>
-            <p>I won't give you the solution, but I'll help guide your thinking!</p>
+            <p>Share your reasoning. Use hints first, then request a solution when ready.</p>
           </div>
         </div>
         
@@ -185,6 +261,7 @@ function createMentorPanel() {
         </div>
       </div>
       
+      <div id="sb-session-status" class="sb-session-status" role="status" aria-live="polite">Log in using the extension popup.</div>
       <div class="sb-chat" id="sb-chat"></div>
     </div>
 
@@ -198,6 +275,7 @@ function createMentorPanel() {
         id="sb-thought-input" 
         placeholder="What are you thinking? Share your approach or ask for a hint..."
         rows="2"
+        maxlength="6000"
       ></textarea>
       
       <div class="sb-actions">
@@ -206,7 +284,18 @@ function createMentorPanel() {
           <button class="sb-hint-btn" data-level="2">🔦 Stronger Hint</button>
           <button class="sb-hint-btn" data-level="3">🎯 Direct Nudge</button>
         </div>
+        <select class="sb-language-dropdown" id="sb-chat-mode" aria-label="Mentor action">
+          <option value="discuss">Approach feedback</option>
+          <option value="debug">Debug my code</option>
+          <option value="explain">Explain my code</option>
+        </select>
         <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
+        <button class="sb-action-btn" id="sb-retry-btn" hidden>Retry request</button>
+        <div class="sb-session-controls">
+          <button class="sb-action-btn" id="sb-reload-btn">Reload history</button>
+          <button class="sb-action-btn" id="sb-clear-btn">Clear panel</button>
+          <button class="sb-action-btn" id="sb-new-btn">New conversation</button>
+        </div>
         
         <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
           <div class="sb-solution-divider">
@@ -220,7 +309,7 @@ function createMentorPanel() {
     </div>
   `;
   
-  panel.querySelector('.sb-problem-title').textContent = currentProblem.title;
+  panel.querySelector('.sb-problem-title').textContent = currentProblem?.title || 'Waiting for problem data...';
   document.body.appendChild(panel);
   mentorPanel = panel;
   
@@ -237,9 +326,11 @@ function createMentorPanel() {
     
     // Listen for manual language changes
     languageDropdown.addEventListener('change', (e) => {
+      if (!e.isTrusted) return;
       manualLanguage = true;
       preferredLanguage = e.target.value;
       languageBadge.textContent = preferredLanguage;
+      switchLanguageContext();
     });
   }
   
@@ -273,7 +364,7 @@ function setupEventListeners() {
         !e.target.closest('#sb-toggle-btn')) {
       // Trigger drag on the whole panel when minimized
       const mouseDownEvent = new MouseEvent('mousedown', {
-        bubbles: true,
+        bubbles: false,
         cancelable: true,
         clientX: e.clientX,
         clientY: e.clientY
@@ -282,13 +373,18 @@ function setupEventListeners() {
     }
   });
   
-  document.getElementById('sb-solution-btn').addEventListener('click', showSolution);
+  document.getElementById('sb-reload-btn').addEventListener('click', event => { if (event.isTrusted) { clearConversation(); extractProblemInfo(); restoreConversation(); } });
+  document.getElementById('sb-clear-btn').addEventListener('click', event => { if (event.isTrusted) clearConversation(); });
+  document.getElementById('sb-new-btn').addEventListener('click', event => { if (event.isTrusted) resetSavedConversation('newConversation'); });
+  document.getElementById('sb-retry-btn').addEventListener('click', event => { if (event.isTrusted && retryAction) performMentor(retryAction); });
+  document.getElementById('sb-solution-btn').addEventListener('click', event => { if (event.isTrusted) showSolution(); });
   // Send button
-  document.getElementById('sb-send-btn').addEventListener('click', () => sendThought(0));
+  document.getElementById('sb-send-btn').addEventListener('click', event => { if (event.isTrusted) sendThought(0); });
   
   // Hint level buttons
   document.querySelectorAll('.sb-hint-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      if (!e.isTrusted) return;
       const level = parseInt(e.target.dataset.level);
       
       // Visual feedback
@@ -311,6 +407,7 @@ function setupEventListeners() {
   // Enter to send (Shift+Enter for new line)
   document.getElementById('sb-thought-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (!e.isTrusted) return;
       e.preventDefault();
       sendThought(0);
     }
@@ -389,57 +486,49 @@ function togglePanel() {
 
 async function sendThought(hintLevel) {
   if (requestInFlight) return;
-  const version = historyVersion;
-  const input = document.getElementById('sb-thought-input');
-  const userThought = input.value.trim();
-  
-  if (!userThought && hintLevel === 0) {
-    return; // Don't send empty thoughts unless it's a hint request
-  }
-  
-  // Add user message to chat
-  if (userThought) {
-    addMessageToChat('user', userThought);
-    conversationHistory.push({ role: 'user', content: userThought });
-  }
-  
-  // Clear input
-  input.value = '';
-  
-  // Show loading
-  requestInFlight = true;
-  showLoading(true);
-  
-  // Send to background script for API call
+  const thought = document.getElementById('sb-thought-input').value.trim();
+  const mode = document.getElementById('sb-chat-mode')?.value || 'discuss';
+  if (!thought && hintLevel === 0 && mode === 'discuss') return;
+  if (mode !== 'discuss') extractCodeTemplate();
   try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'getMentorResponse',
-      data: {
-        problem: currentProblem,
-        userThought: userThought,
-        hintLevel: hintLevel,
-        history: conversationHistory
-      }
-    });
-    
-    if (chrome.runtime.lastError) {
-      throw new Error(chrome.runtime.lastError.message);
+    const data = { ...contextData(), kind: hintLevel ? 'hint' : mode, hintLevel,
+      userThought: thought, code: hintLevel || mode === 'discuss' ? '' : currentCodeTemplate };
+    await performMentor(data);
+  } catch (error) { setPanelStatus(error.message); }
+}
+async function performMentor(data) {
+  if (requestInFlight) return;
+  const version = historyVersion;
+  requestInFlight = true;
+  retryAction = null;
+  const retryButton = document.getElementById('sb-retry-btn');
+  if (retryButton) retryButton.hidden = true;
+  showLoading(true);
+  setPanelStatus('Thinking...');
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'mentorTurn', data });
+    if (version !== historyVersion || data.problem.url !== canonicalPageURL() || data.language !== preferredLanguage) return;
+    if (!response?.success) {
+      if (response?.retryable) { retryAction = response.resumeAction ? { ...data, ...response.resumeAction } : data; if (retryButton) retryButton.hidden = false; }
+      throw new Error(response?.error || 'Backend request failed.');
     }
-    
-    if (version !== historyVersion) return;
-    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
-      if (hintLevel > 0) { hintsUsed++; updateProgress(); }
-      addMessageToChat('mentor', response.message);
-      conversationHistory.push({ role: 'assistant', content: response.message });
-    } else {
-      addMessageToChat('error', response?.error || 'Failed to get response. Check your API key in settings.');
-    }
+    if (typeof response.message !== 'string' || !response.message.trim()) throw new Error('Backend returned an unusable response.');
+    const solution = ['solution', 'correction'].includes(data.kind) || data.hintLevel === 4;
+    if (data.userThought) addMessageToChat('user', data.userThought);
+    addMessageToChat(solution ? 'solution' : 'mentor', response.message, solution);
+    if (solution) lastSolutionCode = response.message;
+    if (data.kind === 'hint' && data.hintLevel < 4) { hintsUsed++; updateProgress(); }
+    document.getElementById('sb-thought-input').value = '';
+    setPanelStatus('Saved to your conversation.');
   } catch (error) {
     if (version !== historyVersion) return;
-    addMessageToChat('error', `Connection error: ${error.message}. Try reloading the extension.`);
-  }
-  
-  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
+    // A lost worker reply is ambiguous too. Keep this logical action for retry.
+    if (!(error instanceof Error) || !error.message) setPanelStatus('Extension worker unavailable. Reload the extension.');
+    else setPanelStatus(error.message);
+    if (!retryAction && /extension|receiving end|message port/i.test(error.message || '')) {
+      retryAction = data; if (retryButton) retryButton.hidden = false;
+    }
+  } finally { if (version === historyVersion) { requestInFlight = false; showLoading(false); } }
 }
 
 // IMPROVED: Add messages with optional correction buttons
@@ -473,12 +562,12 @@ function addMessageToChat(role, message, allowCorrection = false) {
     const wrongBtn = document.createElement('button');
     wrongBtn.className = 'sb-action-btn sb-wrong-btn';
     wrongBtn.textContent = '❌ Wrong Answer - Get Correction';
-    wrongBtn.onclick = function() { requestCorrection(); };
+    wrongBtn.onclick = function(event) { if (event.isTrusted) requestCorrection(); };
     
     const describeBtn = document.createElement('button');
     describeBtn.className = 'sb-action-btn sb-describe-btn';
     describeBtn.textContent = '📝 Describe the Issue';
-    describeBtn.onclick = function() { requestCorrectionWithDetails(); };
+    describeBtn.onclick = function(event) { if (event.isTrusted) requestCorrectionWithDetails(); };
     
     actionDiv.appendChild(wrongBtn);
     actionDiv.appendChild(describeBtn);
@@ -592,142 +681,36 @@ function updateProgress() {
 }
 
 async function showSolution() {
-  if (requestInFlight) return;
-  const version = historyVersion;
-  
-  const solutionBtn = document.getElementById('sb-solution-btn');
-  if (!solutionBtn) return;
-  
-  if (!currentProblem || !currentProblem.title || currentProblem.title === 'Unknown Problem') {
-    alert('Problem information not found. Please refresh the page.');
-    return;
-  }
-  
-  const confirmed = confirm('Are you sure? It\'s better to keep trying with hints first.');
-  if (!confirmed) return;
-  
-  solutionBtn.disabled = true;
-  solutionBtn.textContent = '⏳ Getting solution...';
-  requestInFlight = true;
-  showLoading(true);
-  
+  if (requestInFlight || !confirm('Request a complete solution with explanation and complexity?')) return;
+  extractCodeTemplate();
   try {
-    // Re-extract code template to get latest
-    extractCodeTemplate();
-    
-    const response = await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        action: 'getSolution',
-        data: {
-          problem: currentProblem,
-          language: preferredLanguage,
-          codeTemplate: currentCodeTemplate // Pass the template
-        }
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
-      });
-    });
-    
-    if (version !== historyVersion) return;
-    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
-      lastSolutionCode = response.message; // Store for potential correction
-      addMessageToChat('solution', response.message, true); // true = add correction buttons
-      solutionBtn.textContent = '✅ Solution Shown';
-      solutionBtn.style.opacity = '0.6';
-      
-      setTimeout(() => {
-        const contentEl = document.getElementById('sb-content');
-        if (contentEl) {
-          contentEl.scrollTop = contentEl.scrollHeight;
-        }
-      }, 100);
-    } else {
-      addMessageToChat('error', response?.error || 'Failed to get solution');
-      solutionBtn.disabled = false;
-      solutionBtn.textContent = 'Show Complete Solution';
-    }
-  } catch (error) {
-    if (version !== historyVersion) return;
-    addMessageToChat('error', `Error: ${error.message}`);
-    solutionBtn.disabled = false;
-    solutionBtn.textContent = 'Show Complete Solution';
-  }
-  
-  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
+    await performMentor({ ...contextData(), kind: 'solution', userThought: 'Please give a complete solution with explanation, time and space complexity. Preserve the supplied LeetCode class and function signature.', code: currentCodeTemplate });
+  } catch (error) { setPanelStatus(error.message); }
 }
-
-// NEW: Request corrected solution
 async function requestCorrection(errorMessage = '') {
   if (requestInFlight) return;
-  const version = historyVersion;
-  
-  requestInFlight = true;
-  showLoading(true);
-  
-  // Add user feedback to chat
-  if (errorMessage) {
-    addMessageToChat('user', `The previous solution is incorrect. ${errorMessage}`);
-  } else {
-    addMessageToChat('user', 'The previous solution is incorrect. Please provide a corrected solution.');
-  }
-  
+  extractCodeTemplate();
   try {
-    extractCodeTemplate(); // Get latest template
-    
-    const response = await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        action: 'correctSolution',
-        data: {
-          problem: currentProblem,
-          language: preferredLanguage,
-          previousSolution: lastSolutionCode,
-          errorMessage: errorMessage,
-          codeTemplate: currentCodeTemplate
-        }
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
-      });
-    });
-    
-    if (version !== historyVersion) return;
-    if (response && response.success && typeof response.message === 'string' && response.message.trim()) {
-      lastSolutionCode = response.message; // Update with corrected solution
-      addMessageToChat('solution', response.message, true); // Add with correction buttons
-      
-      setTimeout(() => {
-        const contentEl = document.getElementById('sb-content');
-        if (contentEl) {
-          contentEl.scrollTop = contentEl.scrollHeight;
-        }
-      }, 100);
-    } else {
-      addMessageToChat('error', response?.error || 'Failed to get correction');
-    }
-  } catch (error) {
-    if (version !== historyVersion) return;
-    addMessageToChat('error', `Error: ${error.message}`);
-  }
-  
-  if (version === historyVersion) { requestInFlight = false; showLoading(false); }
+    await performMentor({ ...contextData(), kind: 'correction', userThought: 'Please correct the previous complete solution, explain the bug and complexity, and preserve the supplied signature. ' + errorMessage, code: currentCodeTemplate });
+  } catch (error) { setPanelStatus(error.message); }
 }
-
-// NEW: Request correction with custom error description
 function requestCorrectionWithDetails() {
-  const errorDesc = prompt('Please describe what\'s wrong with the solution (e.g., "fails for edge case", "wrong output for example 2"):');
-  if (errorDesc) {
-    requestCorrection(errorDesc);
-  }
+  const detail = prompt('Describe the issue or failing example:');
+  if (detail) requestCorrection(detail);
 }
-
-
+async function resetSavedConversation(action) {
+  let data;
+  try { data = contextData(); } catch (error) { setPanelStatus(error.message); return { success: false, error: error.message }; }
+  clearConversation();
+  const version = historyVersion;
+  try {
+    const result = await chrome.runtime.sendMessage({ action, data });
+    if (version !== historyVersion) return { success: false, error: 'Panel context changed.' };
+    if (!result?.success) throw new Error(result?.error || 'Could not update saved conversation.');
+    setPanelStatus(action === 'newConversation' ? 'Ready for a new conversation. Previous saved history was kept.' : result.deleted ? 'Saved conversation deleted.' : 'There is no saved conversation to delete.');
+    return { success: true, deleted: result.deleted };
+  } catch (error) { if (version === historyVersion) setPanelStatus(error.message); return { success: false, error: error.message }; }
+}
 
 function clearConversation() {
   historyVersion++;
@@ -736,6 +719,10 @@ function clearConversation() {
   hintsUsed = 0;
   solutionUnlocked = false;
   lastSolutionCode = '';
+  retryAction = null;
+  const retryButton = document.getElementById('sb-retry-btn');
+  if (retryButton) retryButton.hidden = true;
+  setPanelStatus('Visible panel cleared. Saved conversation history was kept.');
   document.getElementById('sb-chat').replaceChildren();
   document.getElementById('sb-thought-input').value = '';
   const section = document.getElementById('sb-solution-section');
@@ -748,9 +735,17 @@ function clearConversation() {
 }
 function setupMessageListener() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request?.action === 'clearHistory') {
+    if (sender?.id !== chrome.runtime.id) return;
+    if (request?.action === 'clearHistory') { clearConversation(); sendResponse({ success: true }); }
+    if (request?.action === 'authChanged') {
       clearConversation();
+      // Worker recovery returns no tokens; the version guards stale results.
+      restoreConversation();
       sendResponse({ success: true });
+    }
+    if (['newConversation', 'deleteConversation'].includes(request?.action)) {
+      resetSavedConversation(request.action).then(sendResponse);
+      return true;
     }
   });
 }

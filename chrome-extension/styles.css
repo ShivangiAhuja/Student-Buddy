@@ -327,6 +327,11 @@
 }
 
 /* Chat Area */
+.sb-session-status { padding: 8px 14px; color: #cbd5e1; font-size: 12px; line-height: 1.4; }
+.sb-session-controls { display: flex; gap: 6px; margin-top: 6px; }
+.sb-session-controls .sb-action-btn { font-size: 11px; padding: 7px 4px; }
+#sb-chat-mode { width: 100%; margin-bottom: 6px; }
+#student-buddy-panel [hidden] { display: none !important; }
 .sb-chat {
   flex: 1;
   min-height: 0;

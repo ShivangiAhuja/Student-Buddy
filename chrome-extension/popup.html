@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Student Buddy Settings</title>
+  <title>Student Buddy Account</title>
   <style>
     * {
       margin: 0;
@@ -13,6 +13,8 @@
 
     body {
       width: 380px;
+      max-height: 600px;
+      overflow-y: auto;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #333;
@@ -209,67 +211,37 @@
 </head>
 <body>
   <div class="header">
-    <h1>🎓 Student Buddy</h1>
-    <p class="subtitle">Powered by Groq AI</p>
+    <h1>Student Buddy</h1>
+    <p class="subtitle">Your coding mentor</p>
   </div>
-
-  <div class="content">
-    <div class="section">
-      <h2><span class="emoji">🔑</span> API Configuration</h2>
-      
-      <div class="input-group">
-        <label for="apiKey">Groq API Key</label>
-        <input 
-          type="password" 
-          id="apiKey" 
-          placeholder="Enter your Groq API key (gsk_...)"
-        >
-      </div>
-
-      <button class="btn btn-primary" id="saveBtn">Save API Key</button>
-      
-      <div class="status" id="status"></div>
-
-      <div class="info-box" style="margin-top: 16px;">
-        <strong>📝 How to get your Groq API key:</strong>
-        <ol class="steps">
-          <li>Visit <a href="https://console.groq.com/keys" target="_blank">Groq Console</a></li>
-          <li>Sign up or log in (free account)</li>
-          <li>Click "Create API Key"</li>
-          <li>Copy the key (starts with <code>gsk_</code>)</li>
-          <li>Paste it above and save</li>
-        </ol>
-        <p style="margin-top: 12px;">
-          <strong>✨ Why Groq?</strong><br>
-          • Blazing fast responses (10x faster)<br>
-          • Free tier with generous limits<br>
-          • More reliable than Gemini<br>
-          • Better at following instructions
-        </p>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2><span class="emoji">🧹</span> Actions</h2>
-      <button class="btn btn-secondary" id="clearHistoryBtn">Clear Conversation History</button>
-    </div>
-
-    <div class="section">
-      <h2><span class="emoji">⚡</span> Tips</h2>
-      <div class="info-box">
-        • Share your thinking process for better hints<br>
-        • Use <code>Ctrl+Shift+M</code> to minimize/maximize<br>
-        • Drag the panel anywhere on screen<br>
-        • Try different hint levels for varied guidance
-      </div>
-    </div>
-  </div>
-
-  <div class="footer">
-    Made with ❤️ for learners everywhere<br>
-    <small>v2.0 | Groq Powered | MIT License</small>
-  </div>
-
+  <main class="content">
+    <p id="backendLabel" class="subtitle"></p>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <section id="signedOut" class="section">
+      <h2 id="authHeading">Welcome back</h2>
+      <form id="authForm">
+        <div class="input-group"><label for="username">Username</label><input id="username" autocomplete="username" maxlength="150" required></div>
+        <div class="input-group" id="emailGroup" hidden><label for="email">Email</label><input id="email" type="email" autocomplete="email" maxlength="254"></div>
+        <div class="input-group"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" maxlength="128" required></div>
+        <div class="input-group" id="confirmationGroup" hidden><label for="confirmation">Confirm password</label><input id="confirmation" type="password" autocomplete="new-password" maxlength="128"></div>
+        <button id="submitBtn" class="btn btn-primary" type="submit">Log in</button>
+      </form>
+      <button id="modeBtn" class="btn btn-secondary" type="button">Create an account</button>
+      <p class="info-box">Passwords are sent only to your configured backend and never saved by Student Buddy. Sign-in lasts for this browser session.</p>
+    </section>
+    <section id="signedIn" class="section" hidden>
+      <h2 id="accountName"></h2>
+      <button id="logoutBtn" class="btn btn-primary" type="button">Log out</button>
+    </section>
+    <section class="section">
+      <h2>Current LeetCode panel</h2>
+      <button id="clearHistoryBtn" class="btn btn-secondary" type="button">Clear visible panel</button>
+      <button id="newConversationBtn" class="btn btn-secondary" type="button">Start a new conversation</button>
+      <button id="deleteConversationBtn" class="btn btn-secondary" type="button">Delete saved conversation</button>
+      <p class="info-box">Clearing the panel keeps saved history. Starting new keeps the previous conversation. Deleting permanently removes the current saved conversation and its messages.</p>
+    </section>
+  </main>
+  <div class="footer">Student Buddy 1.1.0</div>
   <script src="popup.js"></script>
 </body>
 </html>

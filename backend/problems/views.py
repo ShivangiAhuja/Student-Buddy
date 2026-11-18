@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from core.api import BoundedJSONParser
 from .models import Problem
 from .serializers import ProblemInputSerializer, ProblemSerializer
-from .validators import normalize_problem_url
+from .services import get_or_create_problem
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -18,12 +18,7 @@ class ProblemCreateView(APIView):
     def post(self, request):
         serializer = ProblemInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        url, slug = normalize_problem_url(data["url"])
-        # Shared metadata is immutable through this API: clients cannot overwrite it.
-        problem, created = Problem.objects.get_or_create(
-            url=url, defaults={"slug": slug, "title": data["title"], "statement": data["statement"]},
-        )
+        problem, created = get_or_create_problem(serializer.validated_data)
         return Response(ProblemSerializer(problem).data,
                         status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 

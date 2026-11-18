@@ -4,9 +4,9 @@ Student Buddy is an existing Manifest V3 Chrome extension that provides AI codin
 
 ## Current status
 
-Phase 4: the standalone backend now stores shared LeetCode problem metadata and private, user-owned conversations and ordered messages. JWT authentication and health checks remain intact. The extension is unchanged and still has its own in-memory chat. Backend Groq integration, extension integration, quotas, and the dashboard remain planned.
+Phase 6: the existing Chrome extension now uses Django for registration, JWT authentication, context-aware mentor requests, and persistent conversation recovery. Groq credentials stay exclusively on the backend. The floating panel and hint/solution/correction actions are preserved. Automated tests mock Groq; browser and live-Groq verification remain manual.
 
-The legacy extension still calls Groq directly and saves a user-supplied API key in Chrome sync storage. This is a development prototype, not the intended production security model. The backend migration will remove frontend key storage and direct Groq requests.
+The extension sends authenticated requests only to the configured Django backend. Its old Groq key input and direct provider calls are removed. Startup removes the legacy `apiKey` entry from sync, local, and session storage without reading or transmitting it.
 
 ## Project layout
 
@@ -14,7 +14,10 @@ The legacy extension still calls Groq directly and saves a user-supplied API key
 Student Buddy/
 +-- chrome-extension/      # Existing Chrome extension; runs independently
 |   +-- manifest.json      # Chrome configuration and permissions
-|   +-- background.js      # Legacy Groq requests
+|   +-- background.js      # Trusted messaging and authenticated backend calls
+|   +-- api-client.js      # JWT lifecycle and reusable HTTP client
+|   +-- mentor-client.js   # Conversation mappings and idempotent retries
+|   +-- config.js          # Public backend-origin build configuration
 |   +-- content.js         # Floating panel and LeetCode extraction
 |   +-- popup.html
 |   +-- popup.js
@@ -26,6 +29,7 @@ Student Buddy/
 |   +-- accounts/          # Registration, JWT APIs, email index, and tests
 |   +-- problems/          # Canonical problem metadata and APIs
 |   +-- conversations/     # Owned conversations and private message services
+|   +-- ai_engine/         # Mentor prompts, Groq client, orchestration, and usage
 |   +-- manage.py
 |   +-- requirements.txt
 |   +-- .env.example       # Placeholders only
@@ -45,7 +49,8 @@ Student Buddy/
 - Solution and correction prompts requesting explanations and complexity.
 - Correction requests with optional student-provided error details.
 - Code block formatting and copy buttons.
-- In-memory conversation messages; these are not persistent and are currently ignored by the AI prompt builder.
+- Backend-persisted conversations and chronological context; the panel restores recent messages on refresh.
+- Popup registration/login/logout with browser-session JWT storage restricted to trusted extension contexts.
 - Ctrl+Shift+M (or Cmd+Shift+M) toggles the panel; Enter sends a thought.
 
 Analytics, saved solution history, related-problem recommendations, general code review, and the other shortcuts advertised in the previous README are not implemented. No measured learning-outcome statistics are available. No LICENSE file is currently present.
@@ -55,20 +60,21 @@ Analytics, saved solution history, related-problem recommendations, general code
 1. Open `chrome://extensions/` in Chrome and enable Developer mode.
 2. Click **Load unpacked** and select this project's **chrome-extension** folder.
 3. If the old root-folder installation is present, record its extension ID and remove it before loading the new folder. Chrome may assign a different ID, so existing settings may not carry over.
-4. Open a LeetCode problem page and refresh it. Expand the Student Buddy panel.
-5. The legacy AI flow requires a personal Groq key entered through the extension popup. Never put a key in source files, screenshots, or commits. Backend-only credentials will replace this flow in a later phase.
+4. Start Django using the backend instructions below. Use Chrome 114 or newer.
+5. Open the popup, register if needed, and log in. Open a LeetCode problem page and refresh it. Expand the Student Buddy panel.
+6. Real AI requests require a Groq key configured only in `backend/.env`. The extension never asks for that key. See the [Phase 6 manual checklist](docs/phase-6-extension-integration.md).
 
 No build step or package installation is needed for the existing extension.
 
 ## Manual checks after the move
 
 - Check Chrome's extension error list and service worker console.
-- Verify icons, popup, key save status, panel toggle, dragging, and language dropdown.
+- Verify icons, popup registration/login/logout, panel toggle, dragging, and language dropdown.
 - Open a problem directly and confirm the displayed title.
-- With a personal development key, try each hint level and Send Thought.
+- With Groq configured on the backend, try each hint level and Send Thought.
 - After three hint clicks, request a solution; check code copying and both correction actions.
-- Try Clear Conversation History. Messages, in-memory history, draft input, and solution state should reset. Late responses to cleared requests should not reappear.
-- Refresh the page and confirm that conversation messages disappear (persistence is not implemented).
+- Try Clear visible panel. Messages, draft input, and UI progress reset, while server history is kept. Late responses must not reappear. New conversation and Delete saved conversation are separate explicit actions.
+- Refresh the page and confirm recent saved messages return for the same signed-in user, problem, and language.
 
 These browser and live API checks have not been performed by Codex. Static checks cannot establish compatibility with the current LeetCode DOM or Groq service.
 
@@ -77,7 +83,7 @@ These browser and live API checks have not been performed by Codex. Static check
 From PowerShell in `C:\Users\Shivangi Ahuja\Desktop\Student Buddy`:
 
 ```powershell
-node --test tests/extension.test.cjs
+node --test tests/extension.test.cjs tests/extension-integration.test.cjs
 node --check chrome-extension/content.js
 node --check chrome-extension/background.js
 node --check chrome-extension/popup.js
@@ -87,7 +93,7 @@ Tests use Node's built-in runner and mock DOM, Chrome, and network APIs; no pack
 
 ## Run the backend separately (Windows PowerShell)
 
-The extension does not use this backend yet. You can run either independently.
+Start the backend before using popup authentication or mentor actions. The floating panel can still render while the backend is offline and displays a connection error when a request cannot complete.
 
 Use these commands from a PowerShell terminal. The virtual environment and local `.env` have already been created in this workspace; the first two commands are also useful for a fresh checkout.
 
@@ -97,7 +103,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The virtual environment isolates backend packages. Calling its Python directly avoids PowerShell activation-policy issues. `requirements.txt` pins Django 5.2.19, DRF 3.18.3, python-dotenv 1.2.4, and Simple JWT 5.5.1, the versions installed and tested here.
+The virtual environment isolates backend packages. Calling its Python directly avoids PowerShell activation-policy issues. Direct dependencies are pinned: Django 5.2.19, DRF 3.18.3, python-dotenv 1.2.4, Simple JWT 5.5.1, and the official Groq SDK 1.7.0.
 
 For a **fresh checkout only**, create local settings without overwriting an existing `.env`:
 
@@ -143,7 +149,7 @@ Expected JSON (also viewable by opening that URL):
 - `core/tests.py` checks exact JSON, rejected write methods, and host validation. The tests deliberately prohibit database queries.
 - `config/wsgi.py` and `config/asgi.py` are standard entry points for later hosting; no hosting server dependency is installed yet.
 
-Direct dependencies are Django, DRF, python-dotenv, and Simple JWT. There is no Groq, PostgreSQL driver, CORS middleware, or extension integration. Protected APIs require JWT authentication; health, registration, login, and refresh explicitly allow anonymous access.
+Direct dependencies are Django, DRF, python-dotenv, Simple JWT, and Groq. There is no PostgreSQL driver or CORS middleware. The extension worker uses narrow host permissions for cross-origin backend requests. Protected APIs require JWT authentication; health, registration, login, and refresh explicitly allow anonymous access. Missing Groq credentials disable only AI calls, not the existing APIs.
 
 ## Authentication API (Phase 3)
 
@@ -318,7 +324,93 @@ Invoke-RestMethod -Uri "$apiBase/conversations/$($conversationRecord.id)/message
 # Invoke-RestMethod -Uri "$apiBase/conversations/$($conversationRecord.id)/" -Method Delete -Headers $studentHeaders
 ```
 
-New conversations are empty until trusted backend code appends messages. The Chrome extension does not populate this database yet. PostgreSQL and concurrent multi-worker behavior have not been exercised here; SQLite may return lock errors under contention, and callers must handle/retry failed transactions without claiming a successful write.
+New conversations are empty until a successful mentor request or trusted backend service appends messages. The extension now populates this database through authenticated AI requests. PostgreSQL and high-contention multi-worker behavior have not been exercised here; SQLite may return lock errors under contention.
+
+## AI mentor APIs (Phase 5)
+
+Full lifecycle, failure semantics, quotas, model configuration, and examples are in [Phase 5 documentation](docs/phase-5-ai-engine.md).
+
+The official Groq SDK runs on the backend with automatic retries disabled. Groq currently lists `openai/gpt-oss-120b` as a production model; model availability and account access can change, so confirm the [Groq model list](https://console.groq.com/docs/models) when configuring it. Responses must be structured JSON and pass size, completion, and teaching-policy checks before persistence. No generated code is executed.
+
+Add these settings to your ignored `backend/.env`. Enter the real key locally; do not put it in source files, commits, shell commands, screenshots, or frontend JavaScript:
+
+```dotenv
+GROQ_API_KEY=replace-with-your-groq-api-key
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_REASONING_EFFORT=low
+GROQ_TIMEOUT_SECONDS=25
+GROQ_MAX_COMPLETION_TOKENS=2048
+AI_REQUEST_RATE=10/minute
+AI_DAILY_REQUEST_LIMIT=50
+AI_MAX_PROMPT_CHARACTERS=60000
+AI_LEASE_SECONDS=120
+```
+
+History budgets continue to use `HISTORY_MAX_MESSAGES=20` and `HISTORY_MAX_CHARACTERS=24000`. The 60,000-character total prompt budget includes system instructions, problem data, history, and the current request; history shrinks to fit. Character budgets are not tokenizer counts. The completion token cap and the 8,000-character stored-response limit are separate.
+
+The model is selected from process environment first, then saved `backend/.env`, then the default above. For an old-model availability error, save `GROQ_MODEL=openai/gpt-oss-120b` in `.env` and fully restart Django. In the server's PowerShell terminal, remove a stale override with `Remove-Item Env:GROQ_MODEL -ErrorAction SilentlyContinue` before restarting. Reload the Chrome extension too if an old installation still displays raw provider errors. Current APIs intentionally return sanitized provider errors.
+
+GPT-OSS requests retain JSON object mode and explicitly use `include_reasoning=False` plus `GROQ_REASONING_EFFORT` (`low`, `medium`, or `high`; default `low`). These model-specific parameters are omitted for other models; `reasoning_format` is not sent. Hiding reasoning does not disable it or remove its token cost. If responses run out of completion tokens, they remain rejected rather than partially saved; consider `GROQ_MAX_COMPLETION_TOKENS=4096` after reviewing latency and quota. Access to the replacement still depends on your Groq account. See [Groq's reasoning options](https://console.groq.com/docs/reasoning).
+
+Verify only the non-secret model setting from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py shell -c "from django.conf import settings; print(settings.GROQ_MODEL)"
+```
+
+Expected: `openai/gpt-oss-120b`. Do not dump all Django settings or the contents of `.env`. A previously failed AI request ID replays its stored error even after configuration is fixed; submit a fresh action/UUID to verify the new model. No fallback model or additional provider retry is silently selected.
+
+| Endpoint | Required / optional input |
+| --- | --- |
+| `POST /api/hints/` | Required `request_id` (UUID), `language`, `hint_level` (1–4); new conversation needs `problem_id` or nested `problem`; optional `conversation_id`, `user_thought`, `code` |
+| `POST /api/chat/` | Same identity/context fields; `action`: discuss (default), debug, explain, or solution; thought/question or code required unless explicitly requesting a solution |
+
+Hint levels are conceptual guidance, algorithm/data structure guidance, approach/pseudocode, and complete solution with explanation and time/space complexity. Only level 4 or chat `action=solution` explicitly permits a full solution. Prompt separation and output checks reduce accidental disclosure but cannot prove semantic correctness or resistance to every prompt injection.
+
+For an existing conversation, send its ID and matching language; problem identity may be omitted or must match. For a new conversation, omit/null its ID and supply either `problem_id` or `problem: {title, url, statement}`. Existing shared metadata is reused without overwrite. Fields such as `owner`, `role`, `model`, or `messages` are rejected. New AI endpoints require JWTs and use the bounded JSON parser.
+
+From PowerShell in `backend/`, install, migrate, test, and start:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py test --verbosity 2
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+In the authenticated PowerShell session from the examples above (before logout), using the current `$studentHeaders` and `$problemRecord`:
+
+```powershell
+$mentorRequestId = [guid]::NewGuid().ToString()
+$hintBody = @{
+    request_id = $mentorRequestId
+    problem_id = $problemRecord.id
+    language = 'Python'
+    hint_level = 1
+    user_thought = 'I think a hashmap could help. What should I store?'
+} | ConvertTo-Json
+$mentorReply = Invoke-RestMethod -Uri "$apiBase/hints/" -Method Post -Headers $studentHeaders -ContentType 'application/json' -Body $hintBody
+$mentorReply
+
+# New turn: generate a NEW request ID and continue the returned conversation.
+$chatBody = @{
+    request_id = [guid]::NewGuid().ToString()
+    conversation_id = $mentorReply.conversation_id
+    language = 'Python'
+    action = 'debug'
+    user_thought = 'Why does checking the complement after insertion fail for duplicates?'
+    code = 'seen[number] = index'
+} | ConvertTo-Json
+Invoke-RestMethod -Uri "$apiBase/chat/" -Method Post -Headers $studentHeaders -ContentType 'application/json' -Body $chatBody
+```
+
+Success returns `{request_id, conversation_id, response}` plus `hint_level` for hints. Keep the **same request ID and identical body** when retrying a lost response. Completed repeats return the stored response without another provider call or quota charge. Different input with the same ID returns `409`; in-progress repeats also return `409`.
+
+A provider failure saves neither user nor assistant message. A newly created conversation remains empty, and the sanitized error includes its ID when available. Failures consume one persisted daily attempt, as do worker crashes. Repeating that failed ID replays the same error without another charge; an intentional new attempt needs a new ID. Daily quotas reset at midnight UTC, not the computer's local midnight. Database failures return sanitized `503` errors; retry the same ID to avoid duplication. A pending request can remain blocked until its lease expires.
+
+Only short reservation/completion transactions are used; the provider call runs outside them. A per-conversation lease rejects overlapping turns, expires abandoned work, and prevents late workers from committing stale output. Message pairs and request completion commit atomically. The daily counter is in SQLite/PostgreSQL, so restart/cache resets do not reset quotas. Per-minute throttling still uses the default per-process cache; shared cache and infrastructure limits are required before production.
+
+No live Groq call or actual Chrome verification is claimed. A loopback HTTP contract test does exercise the extension worker client against Django with mocked Groq. Untrusted text and conversation history are sent to Groq during real calls; do not submit secrets or private code without understanding provider data handling. Keep SDK/HTTP debug logging off. The Phase 6 extension no longer stores or transmits provider keys; startup removes the old key for the current extension ID.
 
 ### PostgreSQL later
 
@@ -326,7 +418,33 @@ SQLite requires no separate server. Settings already accept `DB_ENGINE=postgresq
 
 ### Next development stage
 
-Next add a backend-only mentor orchestration service using owned conversations, bounded history, mocked Groq tests, timeouts, and usage limits. Keep trusted prompt instructions separate from untrusted problem/student text. Integrate the Chrome extension only after the backend flow is tested. Deployment requires a separate review of HTTPS, hosting, secrets, and production settings; this local foundation is not a deployed service.
+Phase 7 should complete the documented browser/live-provider checks, fix any LeetCode selector or model-quality issues, exercise PostgreSQL/shared-cache concurrency, and prepare production configuration, privacy, and Chrome Web Store requirements. Deployment remains a separate authorized step.
+
+## Extension integration (Phase 6)
+
+The popup handles registration/login/logout and displays the current username. The background worker owns JWTs, refresh rotation, HTTP requests, conversation mappings, and retry UUIDs. Content scripts handle only problem extraction and the existing floating UI. Backend APIs and schemas are unchanged. See [Phase 6 architecture, storage decisions, and manual checklist](docs/phase-6-extension-integration.md).
+
+Tokens use `chrome.storage.session` with `TRUSTED_CONTEXTS` access, surviving worker restarts but not browser-session termination or extension reload. No passwords are stored. Only non-secret conversation IDs and generation markers persist locally, keyed by backend origin, user ID, canonical problem URL, and language. Session-only pending request bodies preserve UUIDs across page/worker restarts; logging out discards those pending drafts. Do not use a shared browser profile for sensitive code.
+
+`config.js` selects `http://127.0.0.1:8000`. Manifest host permissions allow only loopback HTTP, and CSP pins connections to port 8000. Production uses a reviewed HTTPS build-time origin: update `config.js`, the manifest's exact host permission, and `connect-src` together, then reload/review the extension. There is no arbitrary-URL setting or page-controlled URL proxy. No wildcard CORS is enabled; worker host permissions handle cross-origin access.
+
+Buttons map First Hint/Stronger Hint/Direct Nudge to levels 1/2/3. After three successful hints, Show Complete Solution explicitly requests level 4 with explanation and complexity. Send Thought uses approach feedback by default; its mode selector also supports debugging and code explanation. Correction buttons explicitly request a corrected complete solution. Clear panel keeps the saved conversation, New conversation detaches it without deleting it, and Delete saved conversation requires confirmation in the popup.
+
+Recovery displays the backend's latest 50 messages in sequence order, with a truncation notice when appropriate. Full history remains available through the existing paginated API. A missing/deleted conversation ID is removed from the mapping without silently creating a paid AI request. Ambiguous AI retries keep their exact UUID/body; a recovered uncertain draft exposes a Retry request button. Changed drafts cannot silently replace uncertain requests.
+
+Automated checks from the project root:
+
+```powershell
+Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy'
+git status
+git diff --check
+node --test tests/extension.test.cjs tests/extension-integration.test.cjs
+Set-Location .\backend
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test --verbosity 2
+```
+
+The backend suite includes a loopback HTTP test using the real extension worker client and Django API, an isolated test database, and mocked Groq. It requires Node.js 18+ and is explicitly skipped if Node is absent. Node VM tests do not run Chrome or verify its CSP/storage isolation implementation. No real Groq key is needed for automated tests. Detailed manual steps and known MV3 timeout limitations are in the Phase 6 checklist.
 
 ## Local backup and secrets
 

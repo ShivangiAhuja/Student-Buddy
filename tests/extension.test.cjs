@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.join(__dirname, '../chrome-extension');
+const { worker, response, turn } = require('./worker-harness.cjs');
 
 // A deliberately small DOM double: any attempt to parse HTML fails the tests.
 class Node {
@@ -29,16 +30,11 @@ function content() {
     getElementById: id => { if (!ids.has(id)) ids.set(id, new Node()); return ids.get(id); },
     querySelectorAll: () => []
   };
-  const context = vm.createContext({ document, setInterval() {}, setTimeout() {},
-    chrome: { runtime: { onMessage: { addListener(fn) { listener = fn; } } } } });
+  const context = vm.createContext({ document, URL, location: { href: 'https://leetcode.com/problems/two-sum/' }, setInterval() {}, setTimeout() {},
+    chrome: { runtime: { id: 'test-extension', onMessage: { addListener(fn) { listener = fn; } } } } });
   vm.runInContext(fs.readFileSync(path.join(root, 'content.js'), 'utf8'), context);
+  vm.runInContext("currentProblem = { title: 'Two Sum', description: 'Find indices.', url: 'https://leetcode.com/problems/two-sum/' }", context);
   return { context, document, run: code => vm.runInContext(code, context), getListener: () => listener };
-}
-function background(fetch) {
-  const context = vm.createContext({ fetch, AbortController, setTimeout, clearTimeout, TypeError,
-    chrome: { runtime: { onMessage: { addListener() {} } }, storage: { sync: { get: async () => ({ apiKey: 'test-only' }) } } } });
-  vm.runInContext(fs.readFileSync(path.join(root, 'background.js'), 'utf8'), context);
-  return context;
 }
 function tags(node) { return [node.tagName, ...node.children.flatMap(tags)]; }
 
@@ -57,7 +53,7 @@ test('untrusted text and Markdown use safe nodes; code keeps indentation', () =>
 test('clear resets history, visible messages, solution state, and acknowledges', () => {
   const c = content();
   c.run("conversationHistory = [{role:'user',content:'old'}]; hintsUsed=3; solutionUnlocked=true; lastSolutionCode='old'; requestInFlight=true; addMessageToChat('user','old'); setupMessageListener()");
-  let result; c.getListener()({ action: 'clearHistory' }, {}, value => { result = value; });
+  let result; c.getListener()({ action: 'clearHistory' }, { id: 'test-extension' }, value => { result = value; });
   assert.equal(result.success, true);
   assert.equal(c.document.getElementById('sb-chat').children.length, 0);
   assert.equal(c.run('conversationHistory.length'), 0);
@@ -90,27 +86,30 @@ test('language aliases, synchronized controls, and manual override', () => {
   assert.equal(c.run("normalizeLanguage(' C++ ')"), 'C++');
   assert.equal(c.run("normalizeLanguage('JavaScript settings')"), null);
 });
-test('all three Groq flows validate success and reject malformed responses', async () => {
-  for (const handler of ['handleMentorRequest', 'handleSolutionRequest', 'handleCorrectionRequest']) {
-    for (const data of [{ choices: [{ message: { content: 'answer' } }] }, {}, { choices: [] }, { choices: [{ message: { content: ' ' } }] }, { choices: [{ message: { content: 42 } }] }]) {
-      const c = background(async () => ({ ok: true, json: async () => data }));
-      const result = await c[handler]({ problem: { title: 'Test', description: 'Test' }, hintLevel: 1 });
-      assert.equal(result.success, data.choices?.[0]?.message?.content === 'answer');
+test('mentor flows validate backend success and reject malformed responses', async () => {
+  for (const kind of ['hint', 'solution', 'correction']) {
+    for (const text of ['answer', '', ' ', 42, undefined]) {
+      const h = worker({ handler: async call => response(200, { request_id: call.json.request_id, conversation_id: 1, response: text }) });
+      await h.ready;
+      let success = false;
+      try { await h.mentor.turn(turn({ kind })); success = true; } catch {}
+      assert.equal(success, text === 'answer');
     }
   }
 });
-test('invalid JSON, non-JSON HTTP errors, network failure, and timeout', async () => {
-  for (const [fetch, expected] of [
-    [async () => ({ ok: true, json: async () => { throw new SyntaxError(); } }), /invalid JSON/],
-    [async () => ({ ok: false, status: 429 }), /limit/],
-    [async () => ({ ok: false, status: 502 }), /HTTP 502/],
-    [async () => { throw new TypeError('secret provider detail'); }, /connection/],
-    [(_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('abort')))), /timed out/]
+test('invalid JSON, HTTP errors, network failure, and timeout are sanitized', async () => {
+  for (const [handler, expected] of [
+    [async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError(); } }), /unusable/],
+    [async () => response(429, {}), /Too many/],
+    [async () => response(502, {}), /unavailable/],
+    [async () => { throw new TypeError('secret provider detail'); }, /unavailable/],
+    [async call => new Promise((_, reject) => call.signal.addEventListener('abort', () => reject(new Error('abort')))), /taking too long/]
   ]) {
-    const c = background(fetch);
-    await assert.rejects(c.requestGroq('test-only', {}, 10), expected);
+    const h = worker({ handler, timeoutMs: 10 }); await h.ready;
+    await assert.rejects(h.api.request('/api/auth/profile/'), expected);
   }
 });
+
 test('popup requires clear acknowledgement and rejects unrelated tab URLs', async () => {
   for (const [url, acknowledgement, success] of [
     ['https://leetcode.com/problems/two-sum/', { success: true }, true],
@@ -152,4 +151,58 @@ test('MV3 references exist and all icon dimensions match declarations', () => {
   const source = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
   assert.equal((source.match(/\.innerHTML\s*=/g) || []).length, 1);
   assert.ok(!source.includes('${currentProblem.title}'));
+  assert.deepEqual(manifest.host_permissions, ['http://127.0.0.1/*']);
+  assert.ok(!JSON.stringify(manifest).includes('groq.com'));
+  for (const file of ['background.js', 'api-client.js', 'mentor-client.js', 'popup.js', 'content.js']) {
+    const code = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.ok(!code.includes('api.groq.com'), file);
+    assert.ok(!code.includes('storage.sync.get'), file);
+  }
+});
+
+test('panel ignores late replies after auth and problem context switches', async () => {
+  for (const change of ['authChanged', 'problem', 'routeBeforePolling']) {
+    const c = content(); let finish;
+    c.context.chrome.runtime.sendMessage = message => message.action === 'mentorRecover' ? Promise.resolve({ success: true, messages: [], conversationId: null }) : new Promise(resolve => { finish = resolve; });
+    c.document.getElementById('sb-thought-input').value = 'old thought';
+    c.run('setupMessageListener()');
+    const pending = c.run('sendThought(1)');
+    if (change === 'authChanged') c.getListener()({ action: 'authChanged' }, { id: 'test-extension' }, () => {});
+    else if (change === 'problem') c.run("clearConversation(); currentProblem = { title: 'Other', description: 'Other text', url: 'https://leetcode.com/problems/other/' }");
+    else c.context.location.href = 'https://leetcode.com/problems/other/';
+    finish({ success: true, message: 'stale' });
+    await pending;
+    assert.equal(c.document.getElementById('sb-chat').children.length, 0);
+  }
+});
+
+test('panel recovers chronological history and marks explicit solutions for correction', async () => {
+  const c = content();
+  c.context.chrome.runtime.sendMessage = async () => ({ success: true, conversationId: 1, messages: [
+    { role: 'user', content: 'Mentor request: hint level 4\nStudent: solution', sequence: 1 },
+    { role: 'assistant', content: 'Complete code and explanation', sequence: 2 }
+  ] });
+  await c.run('restoreConversation()');
+  const rows = c.document.getElementById('sb-chat').children;
+  assert.equal(rows[0].className, 'sb-message sb-message-user');
+  assert.equal(rows[1].className, 'sb-message sb-message-solution');
+  assert.equal(c.run('lastSolutionCode'), 'Complete code and explanation');
+});
+
+test('popup registration/login forms clear password fields and display safe account text', async () => {
+  for (const register of [false, true]) {
+    const nodes = new Map(); const calls = [];
+    const node = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
+    const context = vm.createContext({ document: { addEventListener() {}, getElementById: node },
+      chrome: { runtime: { sendMessage: async message => { calls.push(message); return { success: true, user: { id: 1, username: '<img src=x>' } }; } } } });
+    vm.runInContext(fs.readFileSync(path.join(root, 'popup.js'), 'utf8'), context);
+    if (register) context.toggleMode();
+    node('username').value = 'alice'; node('email').value = 'alice@example.com';
+    node('password').value = 'test-password'; node('confirmation').value = 'test-password';
+    await context.submitAuthentication({ preventDefault() {} });
+    assert.equal(calls[0].action, register ? 'register' : 'login');
+    assert.equal(node('password').value, '');
+    assert.equal(node('confirmation').value, '');
+    if (!register) assert.equal(node('accountName').textContent, 'Signed in as <img src=x>');
+  }
 });
