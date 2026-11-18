@@ -1,5 +1,8 @@
 // content.js - Injected into LeetCode pages
 
+let panelAuthVersion = 0;
+let readingGeometry = null;
+let followNewMessages = true;
 let historyVersion = 0;
 let requestInFlight = false;
 let manualLanguage = false;
@@ -24,7 +27,7 @@ function init() {
   startLanguageMonitoring();
   lastRoute = canonicalPageURL();
   setInterval(monitorContext, 800);
-  restoreConversation();
+  refreshPanelAuth();
 }
 function canonicalPageURL() {
   try {
@@ -81,6 +84,81 @@ function switchLanguageContext() {
 function setPanelStatus(text) {
   const status = document.getElementById('sb-session-status');
   if (status) status.textContent = text;
+}
+function renderPanelAccount(user) {
+  document.getElementById('sb-account-label').textContent = user ? `Signed in as ${user.username}` : 'Sign in to save your progress';
+  document.getElementById('sb-login-btn').hidden = !!user;
+  document.getElementById('sb-logout-btn').hidden = !user;
+}
+async function refreshPanelAuth() {
+  const version = ++panelAuthVersion;
+  try {
+    const state = await chrome.runtime.sendMessage({ action: 'panelAuthState' });
+    if (version !== panelAuthVersion) return;
+    if (!state?.success) throw new Error(state?.error || 'Could not check your session.');
+    renderPanelAccount(state.user);
+    if (state.user) await restoreConversation();
+    else setPanelStatus('Use Login / Register above to open your secure account page.');
+  } catch (error) {
+    if (version !== panelAuthVersion) return;
+    renderPanelAccount(null);
+    setPanelStatus(error.message);
+  }
+}
+async function openAccountPage() {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'openAuth' });
+    if (!result?.success) throw new Error(result?.error || 'Could not open the account page.');
+    setPanelStatus('Sign in in the Student Buddy account tab, then return here.');
+  } catch (error) { setPanelStatus(error.message); }
+}
+async function logoutFromPanel() {
+  ++panelAuthVersion;
+  clearConversation();
+  renderPanelAccount(null);
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'panelLogout' });
+    if (!result?.success || !result.storageCleared) throw new Error(result?.error || 'Could not clear extension storage. Disable the extension and clear its storage.');
+    setPanelStatus(result.revoked ? 'Logged out. Use Login / Register to sign in.' : 'Signed out locally. Server revocation is unconfirmed; tokens expire normally.');
+  } catch (error) { setPanelStatus(error.message); }
+}
+function panelDimensions(viewportWidth, viewportHeight, expanded) {
+  const availableWidth = Math.max(0, viewportWidth - 24);
+  const availableHeight = Math.max(0, viewportHeight - 24);
+  return { width: Math.min(expanded ? 960 : 500, availableWidth),
+    height: Math.min(expanded ? availableHeight : Math.round(viewportHeight * 0.92), availableHeight, expanded ? Infinity : 860) };
+}
+function fitPanelToViewport() {
+  if (!mentorPanel) return;
+  const rect = mentorPanel.getBoundingClientRect();
+  const minimized = mentorPanel.classList.contains('sb-minimized');
+  const maxWidth = Math.max(0, window.innerWidth - 24);
+  const height = Math.min(rect.height, Math.max(0, window.innerHeight - 24));
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - Math.min(rect.width, maxWidth) - 12));
+  const top = Math.max(12, Math.min(rect.top, window.innerHeight - height - 12));
+  Object.assign(mentorPanel.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto',
+    maxWidth: maxWidth + 'px', maxHeight: Math.max(0, window.innerHeight - top - 12) + 'px' });
+  if (!minimized && rect.height > window.innerHeight - 24) mentorPanel.style.height = height + 'px';
+}
+function toggleReadingMode() {
+  const expanded = !mentorPanel.classList.contains('sb-reading');
+  const fields = ['width', 'height', 'top', 'left', 'right', 'bottom', 'maxHeight'];
+  if (expanded) {
+    readingGeometry = Object.fromEntries(fields.map(key => [key, mentorPanel.style[key] || '']));
+    const size = panelDimensions(window.innerWidth, window.innerHeight, true);
+    Object.assign(mentorPanel.style, { width: size.width + 'px', height: size.height + 'px',
+      top: '12px', left: (window.innerWidth - size.width) / 2 + 'px', right: 'auto', bottom: 'auto', maxHeight: size.height + 'px' });
+  } else if (readingGeometry) Object.assign(mentorPanel.style, readingGeometry);
+  mentorPanel.classList.toggle('sb-reading', expanded);
+  const button = document.getElementById('sb-reading-btn');
+  button.textContent = expanded ? 'Collapse' : 'Expand';
+  button.setAttribute('aria-pressed', String(expanded));
+  fitPanelToViewport();
+}
+function scrollToLatest() {
+  const chat = document.getElementById('sb-chat');
+  chat.scrollTop = chat.scrollHeight;
+  document.getElementById('sb-latest-btn').hidden = true;
 }
 function contextData() {
   if (!currentProblem) throw new Error('Problem data is missing or changed. Wait for LeetCode to load, then reload saved history.');
@@ -203,7 +281,7 @@ function createMentorPanel() {
 
   const panel = document.createElement('div');
   panel.id = 'student-buddy-panel';
-  panel.className = 'sb-panel sb-minimized';
+  panel.className = 'sb-panel';
   
   panel.innerHTML = `
     <div class="sb-header">
@@ -211,9 +289,15 @@ function createMentorPanel() {
         <span class="sb-icon">🎓</span>
         <span>Student Buddy</span>
       </div>
-      <button class="sb-toggle" id="sb-toggle-btn" title="Minimize panel">▼</button>
+      <div class="sb-header-actions"><button class="sb-reading-toggle" id="sb-reading-btn" aria-pressed="false">Expand</button>
+      <button class="sb-toggle" id="sb-toggle-btn" aria-label="Minimize panel" title="Minimize panel">▼</button>
+      </div>
     </div>
-    
+    <div class="sb-account-row">
+      <span id="sb-account-label">Sign in to save your progress</span>
+      <button id="sb-login-btn" class="sb-account-button">Login / Register</button>
+      <button id="sb-logout-btn" class="sb-account-button" hidden>Log out</button>
+    </div>
     <div class="sb-content" id="sb-content">
       <div class="sb-welcome">
         <div class="sb-welcome-header">
@@ -228,10 +312,7 @@ function createMentorPanel() {
           <div class="sb-problem-label">Problem:</div>
           <div class="sb-problem-title"></div>
           <div class="sb-language-selector">
-            <div class="sb-language-badge" id="sb-language-badge">
-              <span class="sb-language-icon">💻</span>
-              <span id="sb-language-text">Python</span>
-            </div>
+            <label for="sb-language-dropdown">Language</label>
             <select class="sb-language-dropdown" id="sb-language-dropdown">
               <option value="C++">C++</option>
               <option value="Java">Java</option>
@@ -261,8 +342,9 @@ function createMentorPanel() {
         </div>
       </div>
       
-      <div id="sb-session-status" class="sb-session-status" role="status" aria-live="polite">Log in using the extension popup.</div>
-      <div class="sb-chat" id="sb-chat"></div>
+      <div id="sb-session-status" class="sb-session-status" role="status" aria-live="polite">Use Login / Register above to sign in securely.</div>
+      <div class="sb-chat" id="sb-chat" tabindex="0" aria-label="Mentor conversation"></div>
+      <button id="sb-latest-btn" class="sb-latest-button" hidden>Jump to latest response</button>
     </div>
 
     <div class="sb-loading" id="sb-loading" style="display: none;">
@@ -312,6 +394,10 @@ function createMentorPanel() {
   panel.querySelector('.sb-problem-title').textContent = currentProblem?.title || 'Waiting for problem data...';
   document.body.appendChild(panel);
   mentorPanel = panel;
+  const size = panelDimensions(window.innerWidth, window.innerHeight, false);
+  Object.assign(panel.style, { width: size.width + 'px', height: size.height + 'px', top: '12px', right: '12px', bottom: 'auto' });
+  window.addEventListener('resize', fitPanelToViewport);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fitPanelToViewport).observe(panel);
   
   // Update language badge and dropdown
   const languageBadge = document.getElementById('sb-language-text');
@@ -329,7 +415,7 @@ function createMentorPanel() {
       if (!e.isTrusted) return;
       manualLanguage = true;
       preferredLanguage = e.target.value;
-      languageBadge.textContent = preferredLanguage;
+      if (languageBadge) languageBadge.textContent = preferredLanguage;
       switchLanguageContext();
     });
   }
@@ -347,6 +433,12 @@ function createMentorPanel() {
 }
 
 function setupEventListeners() {
+  document.getElementById('sb-login-btn').addEventListener('click', event => { if (event.isTrusted) openAccountPage(); });
+  document.getElementById('sb-logout-btn').addEventListener('click', event => { if (event.isTrusted) logoutFromPanel(); });
+  document.getElementById('sb-reading-btn').addEventListener('click', event => { if (event.isTrusted) toggleReadingMode(); });
+  const chat = document.getElementById('sb-chat');
+  chat.addEventListener('scroll', () => { followNewMessages = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 64; if (followNewMessages) document.getElementById('sb-latest-btn').hidden = true; });
+  document.getElementById('sb-latest-btn').addEventListener('click', () => { followNewMessages = true; scrollToLatest(); });
   // Toggle panel
   const toggleBtn = document.getElementById('sb-toggle-btn');
   toggleBtn.addEventListener('click', (e) => {
@@ -430,7 +522,7 @@ function makeDraggable(handle, element) {
   
   function dragStart(e) {
     // Don't drag if clicking the toggle button
-    if (e.target.id === 'sb-toggle-btn' || e.target.closest('#sb-toggle-btn')) {
+    if (e.target.closest('button') || e.target.closest('select') || element.classList.contains('sb-reading')) {
       return;
     }
     
@@ -465,6 +557,7 @@ function makeDraggable(handle, element) {
     element.style.top = currentY + 'px';
     element.style.bottom = 'auto';
     element.style.right = 'auto';
+    fitPanelToViewport();
   }
   
   function dragEnd() {
@@ -481,7 +574,9 @@ function togglePanel() {
   const btn = document.getElementById('sb-toggle-btn');
   const isMinimized = mentorPanel.classList.contains('sb-minimized');
   btn.textContent = isMinimized ? '▲' : '▼';
-  btn.title = isMinimized ? 'Expand panel' : 'Minimize panel';
+  btn.title = isMinimized ? 'Restore panel' : 'Minimize panel';
+  btn.setAttribute('aria-label', btn.title);
+  fitPanelToViewport();
 }
 
 async function sendThought(hintLevel) {
@@ -546,6 +641,7 @@ function addMessageToChat(role, message, allowCorrection = false) {
   messageDiv.className = `sb-message sb-message-${role}`;
   
   // Format message with markdown-like code blocks
+  const shouldFollow = followNewMessages;
   const formattedMessage = formatMessage(message);
   
   const messageContent = document.createElement('div');
@@ -575,9 +671,9 @@ function addMessageToChat(role, message, allowCorrection = false) {
   }
   
   content.appendChild(messageDiv);
-  const scroll = document.getElementById('sb-content');
-  scroll.scrollTop = scroll.scrollHeight;
-  content.scrollTop = content.scrollHeight;
+  mentorPanel?.classList.add('sb-has-messages');
+  if (shouldFollow) scrollToLatest();
+  else document.getElementById('sb-latest-btn').hidden = false;
 }
 // Render a small Markdown subset without parsing any untrusted HTML.
 function appendInline(parent, text) {
@@ -607,7 +703,7 @@ function formatMessage(message) {
       const block = document.createElement('div'); block.className = 'sb-code-block';
       const header = document.createElement('div'); header.className = 'sb-code-header';
       const lang = document.createElement('span'); lang.className = 'sb-code-lang'; lang.textContent = fence[1] || 'code';
-      const button = document.createElement('button'); button.className = 'sb-copy-btn'; button.textContent = '\u{1f4cb} Copy';
+      const button = document.createElement('button'); button.className = 'sb-copy-btn'; button.textContent = 'Copy Code';
       const pre = document.createElement('pre'); const code = document.createElement('code');
       code.textContent = codeLines.join('\n');
       button.addEventListener('click', () => copyCodeText(code.textContent, button));
@@ -639,7 +735,7 @@ async function copyCodeText(text, button) {
     }
     button.textContent = '\u2705 Copied!';
   } catch { button.textContent = '\u274c Copy failed'; }
-  setTimeout(() => { button.textContent = '\u{1f4cb} Copy'; }, 2000);
+  setTimeout(() => { button.textContent = 'Copy Code'; }, 2000);
 }
 
 function showLoading(show) {
@@ -716,6 +812,10 @@ function clearConversation() {
   historyVersion++;
   requestInFlight = false;
   conversationHistory = [];
+  followNewMessages = true;
+  mentorPanel?.classList.remove('sb-has-messages');
+  const latest = document.getElementById('sb-latest-btn');
+  if (latest) latest.hidden = true;
   hintsUsed = 0;
   solutionUnlocked = false;
   lastSolutionCode = '';
@@ -740,7 +840,7 @@ function setupMessageListener() {
     if (request?.action === 'authChanged') {
       clearConversation();
       // Worker recovery returns no tokens; the version guards stale results.
-      restoreConversation();
+      refreshPanelAuth();
       sendResponse({ success: true });
     }
     if (['newConversation', 'deleteConversation'].includes(request?.action)) {

@@ -324,3 +324,31 @@ test('delete cannot falsely claim to delete an unknown pending conversation', as
   await assert.rejects(h.mentor.reset(turn(), true), /running/);
   assert.ok(Object.keys(h.state.session).some(key => key.startsWith('sbPending:')));
 });
+
+test('panel auth entry opens only the fixed extension account page without credentials', async () => {
+  const h = worker({ storedAuth: null }); await h.ready;
+  const opened = await h.dispatch({ action: 'openAuth' }, h.content);
+  assert.equal(opened.opened, true);
+  assert.equal(h.openedTabs[0].url, h.chrome.runtime.getURL('auth.html'));
+  assert.equal(h.calls.length, 0);
+  assert.equal((await h.dispatch({ action: 'openAuth' }, { ...h.content, url: 'https://evil.test/' })).success, false);
+  assert.equal((await h.dispatch({ action: 'login', data: { username: 'a', password: 'b' } }, h.content)).success, false);
+});
+
+test('account tab reuses secure registration/login; panel sees username only and can log out', async () => {
+  const h = worker({ storedAuth: null, handler: async call => {
+    if (call.url.endsWith('/register/')) return response(201, { id: 1 });
+    if (call.url.endsWith('/login/')) return response(200, { access: jwt(), refresh: 'private-refresh' });
+    if (call.url.endsWith('/logout/')) return response(204);
+    return response(200, { id: 1, username: 'alice', email: 'private@example.com' });
+  } }); await h.ready;
+  const accountTab = { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('auth.html'), frameId: 0, tab: { id: 7 } };
+  assert.equal((await h.dispatch({ action: 'register', data: { username: 'alice', email: 'alice@example.com', password: 'test', password_confirmation: 'test' } }, accountTab)).success, true);
+  assert.equal((await h.dispatch({ action: 'login', data: { username: 'alice', password: 'test' } }, accountTab)).success, true);
+  const state = await h.dispatch({ action: 'panelAuthState' }, h.content);
+  assert.equal(state.user.username, 'alice');
+  assert.deepEqual(Object.keys(state.user), ['username']);
+  assert.ok(!JSON.stringify(state).includes('private'));
+  assert.equal((await h.dispatch({ action: 'panelLogout' }, h.content)).revoked, true);
+  assert.equal((await h.dispatch({ action: 'panelAuthState' }, h.content)).user, null);
+});

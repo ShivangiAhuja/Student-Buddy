@@ -25,17 +25,29 @@ function credentials(data, register) {
 }
 async function dispatch(request, sender) {
   if (sender?.id !== chrome.runtime.id || !exactFields(request, ['action', 'data'])) throw new StudentBuddyAPI.ApiError('forbidden');
+  const accountPage = sender.url === chrome.runtime.getURL('auth.html') && (!sender.tab || sender.frameId === 0);
   const popup = sender.url === chrome.runtime.getURL('popup.html') && !sender.tab;
-  if (popup) {
+  if (popup || accountPage) {
     if (request.action === 'authState') return api.state();
     if (request.action === 'login') return api.login(credentials(request.data, false));
     if (request.action === 'register') return api.register(credentials(request.data, true));
     if (request.action === 'logout') return api.logout();
     throw new StudentBuddyAPI.ApiError('forbidden');
   }
-  if (!sender.tab || sender.frameId !== 0 || !['mentorRecover', 'mentorTurn', 'newConversation', 'deleteConversation'].includes(request.action)) {
+  if (!sender.tab || sender.frameId !== 0) {
     throw new StudentBuddyAPI.ApiError('forbidden');
   }
+  StudentBuddyMentor.canonicalProblemURL(sender.url);
+  if (request.action === 'openAuth') {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('auth.html'), active: true });
+    return { opened: true };
+  }
+  if (request.action === 'panelAuthState') {
+    const state = await api.state();
+    return { user: state.user ? { username: state.user.username } : null };
+  }
+  if (request.action === 'panelLogout') return api.logout();
+  if (!['mentorRecover', 'mentorTurn', 'newConversation', 'deleteConversation'].includes(request.action)) throw new StudentBuddyAPI.ApiError('forbidden');
   const data = request.data;
   if (!exactFields(data, ['problem', 'language', 'kind', 'hintLevel', 'userThought', 'code']) ||
       !exactFields(data.problem, ['title', 'description', 'url']) ||

@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirm('Permanently delete the current saved conversation and its messages?')) panelAction('deleteConversation');
   });
   loadSettings();
+  chrome.runtime.onMessage?.addListener(message => { if (message?.action === 'authChanged') loadSettings(); });
 });
 function showStatus(message, type = 'error') {
   const element = document.getElementById('status');

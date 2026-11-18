@@ -10,7 +10,10 @@ const { worker, response, turn } = require('./worker-harness.cjs');
 class Node {
   constructor(tag = '#text', text = '') {
     this.tagName = tag; this.children = []; this.value = ''; this.style = {};
-    this.classList = { add() {}, remove() {} }; this.text = text; this.listeners = {};
+    const classes = new Set();
+    this.classList = { add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value),
+      toggle(value, force) { const enabled = force ?? !classes.has(value); if (enabled) classes.add(value); else classes.delete(value); return enabled; } };
+    this.attributes = {}; this.text = text; this.listeners = {};
   }
   set innerHTML(_) { throw new Error('Untrusted HTML sink'); }
   set textContent(text) { this.children = []; this.text = text; }
@@ -20,6 +23,8 @@ class Node {
   replaceChildren() { this.children = []; this.text = ''; }
   querySelector(selector) { return this.children.find(n => '.' + n.className === selector) || null; }
   addEventListener(name, fn) { this.listeners[name] = fn; }
+  setAttribute(name, value) { this.attributes[name] = value; }
+  getBoundingClientRect() { return { left: parseFloat(this.style.left) || 12, top: parseFloat(this.style.top) || 12, width: parseFloat(this.style.width) || 500, height: parseFloat(this.style.height) || 700 }; }
 }
 function content() {
   const ids = new Map(); let listener;
@@ -30,7 +35,7 @@ function content() {
     getElementById: id => { if (!ids.has(id)) ids.set(id, new Node()); return ids.get(id); },
     querySelectorAll: () => []
   };
-  const context = vm.createContext({ document, URL, location: { href: 'https://leetcode.com/problems/two-sum/' }, setInterval() {}, setTimeout() {},
+  const context = vm.createContext({ document, URL, window: { innerWidth: 1280, innerHeight: 800 }, location: { href: 'https://leetcode.com/problems/two-sum/' }, setInterval() {}, setTimeout() {},
     chrome: { runtime: { id: 'test-extension', onMessage: { addListener(fn) { listener = fn; } } } } });
   vm.runInContext(fs.readFileSync(path.join(root, 'content.js'), 'utf8'), context);
   vm.runInContext("currentProblem = { title: 'Two Sum', description: 'Find indices.', url: 'https://leetcode.com/problems/two-sum/' }", context);
@@ -163,7 +168,7 @@ test('MV3 references exist and all icon dimensions match declarations', () => {
 test('panel ignores late replies after auth and problem context switches', async () => {
   for (const change of ['authChanged', 'problem', 'routeBeforePolling']) {
     const c = content(); let finish;
-    c.context.chrome.runtime.sendMessage = message => message.action === 'mentorRecover' ? Promise.resolve({ success: true, messages: [], conversationId: null }) : new Promise(resolve => { finish = resolve; });
+    c.context.chrome.runtime.sendMessage = message => message.action === 'panelAuthState' ? Promise.resolve({ success: true, user: null }) : message.action === 'mentorRecover' ? Promise.resolve({ success: true, messages: [], conversationId: null }) : new Promise(resolve => { finish = resolve; });
     c.document.getElementById('sb-thought-input').value = 'old thought';
     c.run('setupMessageListener()');
     const pending = c.run('sendThought(1)');
@@ -205,4 +210,73 @@ test('popup registration/login forms clear password fields and display safe acco
     assert.equal(node('confirmation').value, '');
     if (!register) assert.equal(node('accountName').textContent, 'Signed in as <img src=x>');
   }
+});
+
+test('panel shows safe login/logout state and opens the trusted auth page', async () => {
+  const c = content(); const calls = [];
+  c.context.chrome.runtime.sendMessage = async message => { calls.push(message); return { success: true, opened: true }; };
+  c.run('renderPanelAccount(null)');
+  assert.equal(c.document.getElementById('sb-login-btn').hidden, false);
+  assert.equal(c.document.getElementById('sb-logout-btn').hidden, true);
+  await c.run('openAccountPage()');
+  assert.equal(calls[0].action, 'openAuth');
+  c.run("renderPanelAccount({ username: '<img src=x>' })");
+  assert.equal(c.document.getElementById('sb-account-label').textContent, 'Signed in as <img src=x>');
+  assert.equal(c.document.getElementById('sb-login-btn').hidden, true);
+  await c.run('logoutFromPanel()');
+  assert.equal(calls.at(-1).action, 'panelLogout');
+  assert.equal(c.document.getElementById('sb-login-btn').hidden, false);
+});
+
+test('auth change refreshes panel state and restores history without refreshing LeetCode', async () => {
+  const c = content();
+  c.context.chrome.runtime.sendMessage = async message => message.action === 'panelAuthState' ?
+    { success: true, user: { username: 'alice' } } : { success: true, messages: [], conversationId: 1 };
+  c.run('setupMessageListener()');
+  c.getListener()({ action: 'authChanged' }, { id: 'test-extension' }, () => {});
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(c.document.getElementById('sb-account-label').textContent, 'Signed in as alice');
+  assert.equal(c.document.getElementById('sb-login-btn').hidden, true);
+});
+
+test('reading mode expands within viewport, collapses to previous size, and can minimize', () => {
+  const c = content();
+  const panel = new Node('div'); panel.style = { width: '500px', height: '700px', left: '12px', top: '12px' };
+  c.context.panelFixture = panel;
+  c.run('mentorPanel = panelFixture; toggleReadingMode()');
+  assert.equal(panel.classList.contains('sb-reading'), true);
+  assert.equal(panel.style.height, '776px');
+  assert.equal(panel.style.width, '960px');
+  assert.equal(c.document.getElementById('sb-reading-btn').attributes['aria-pressed'], 'true');
+  c.run('toggleReadingMode()');
+  assert.equal(panel.style.height, '700px');
+  assert.equal(panel.classList.contains('sb-reading'), false);
+  c.run('togglePanel()');
+  assert.equal(panel.classList.contains('sb-minimized'), true);
+  c.run('togglePanel()');
+  assert.equal(panel.classList.contains('sb-minimized'), false);
+});
+
+test('responsive panel dimensions fit small and large viewports', () => {
+  const c = content();
+  for (const [width, height] of [[360, 540], [540, 400], [1280, 800], [1920, 1080]]) {
+    for (const expanded of [false, true]) {
+      const result = c.run(`panelDimensions(${width}, ${height}, ${expanded})`);
+      assert.ok(result.width <= width - 24);
+      assert.ok(result.height <= height - 24);
+      assert.ok(result.width > 0 && result.height > 0);
+    }
+  }
+});
+
+test('long responses follow new content only when the reader has not scrolled up', () => {
+  const c = content();
+  const chat = c.document.getElementById('sb-chat');
+  chat.scrollHeight = 3000; chat.scrollTop = 200;
+  c.run("followNewMessages = false; addMessageToChat('mentor', 'Long explanation. '.repeat(300))");
+  assert.equal(chat.scrollTop, 200);
+  assert.equal(c.document.getElementById('sb-latest-btn').hidden, false);
+  c.run('followNewMessages = true; scrollToLatest()');
+  assert.equal(chat.scrollTop, 3000);
+  assert.equal(c.document.getElementById('sb-latest-btn').hidden, true);
 });

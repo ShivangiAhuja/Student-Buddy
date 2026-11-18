@@ -422,6 +422,10 @@ Phase 7 should complete the documented browser/live-provider checks, fix any Lee
 
 ## Extension integration (Phase 6)
 
+The floating panel now includes **Login / Register**, username display, and **Log out**. Login opens the extension-owned `auth.html` tab and reuses the popup's authentication code; no password field is embedded in LeetCode. Successful login updates open panels automatically. The toolbar popup remains available as an alternative.
+
+The panel opens at up to 500px wide and 92% viewport height (capped at 860px). **Expand** uses up to 960px and most of the viewport; **Collapse** restores the earlier size. Drag the bottom-right resize handle to adjust height. Chat is the only main vertical scrolling region; code blocks scroll horizontally. New responses follow automatically until you scroll up, when **Jump to latest response** becomes available. The language selector now has one clear label instead of a duplicate badge. See [panel usability notes and manual checks](docs/panel-auth-reading.md).
+
 The popup handles registration/login/logout and displays the current username. The background worker owns JWTs, refresh rotation, HTTP requests, conversation mappings, and retry UUIDs. Content scripts handle only problem extraction and the existing floating UI. Backend APIs and schemas are unchanged. See [Phase 6 architecture, storage decisions, and manual checklist](docs/phase-6-extension-integration.md).
 
 Tokens use `chrome.storage.session` with `TRUSTED_CONTEXTS` access, surviving worker restarts but not browser-session termination or extension reload. No passwords are stored. Only non-secret conversation IDs and generation markers persist locally, keyed by backend origin, user ID, canonical problem URL, and language. Session-only pending request bodies preserve UUIDs across page/worker restarts; logging out discards those pending drafts. Do not use a shared browser profile for sensitive code.

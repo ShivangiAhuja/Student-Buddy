@@ -17,6 +17,7 @@ function worker({ storedAuth = auth(), stores, handler = async () => response(20
   const removals = [];
   const calls = [];
   const broadcasts = [];
+  const openedTabs = [];
   const storage = Object.fromEntries(['session', 'local', 'sync'].map(area => [area, {
     async setAccessLevel(options) { if (failMigration) throw new Error('blocked'); accessLevels.push([area, options.accessLevel]); },
     async get(keys) {
@@ -30,7 +31,7 @@ function worker({ storedAuth = auth(), stores, handler = async () => response(20
   let listener;
   const chrome = { storage, runtime: { id: 'test-extension', getURL: name => 'chrome-extension://test-extension/' + name,
     onMessage: { addListener(fn) { listener = fn; } } },
-    tabs: { query: async () => [], sendMessage: async (id, message) => { broadcasts.push(message); } } };
+    tabs: { query: async () => [], create: async options => { openedTabs.push(options); return { id: 7 }; }, sendMessage: async (id, message) => { broadcasts.push(message); } } };
   const context = vm.createContext({ chrome, URL, crypto: webcrypto, AbortController, setTimeout, clearTimeout, atob,
     fetch: async (url, options) => {
       const call = { url, ...options, json: options.body ? JSON.parse(options.body) : undefined };
@@ -49,7 +50,7 @@ function worker({ storedAuth = auth(), stores, handler = async () => response(20
   const mentor = vm.runInContext('mentor', context);
   const popup = { id: chrome.runtime.id, url: chrome.runtime.getURL('popup.html') };
   const content = { id: chrome.runtime.id, url: 'https://leetcode.com/problems/two-sum/', tab: { id: 1 }, frameId: 0 };
-  return { api, mentor, chrome, context, state, calls, accessLevels, removals, broadcasts,
+  return { api, mentor, chrome, context, state, calls, accessLevels, removals, broadcasts, openedTabs,
     popup, content, ready: api.ready,
     dispatch: (request, sender = popup) => new Promise(resolve => listener(request, sender, resolve)) };
 }

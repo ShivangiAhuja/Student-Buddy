@@ -148,9 +148,10 @@
   display: flex;
   flex-direction: column;
   background: #1e293b;
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 0;
   flex: 1;
-  max-height: calc(85vh - 62px);
+  max-height: none;
 }
 
 /* Custom Scrollbar */
@@ -919,4 +920,69 @@
 
 @media (max-height: 700px) {
   .sb-panel { height: 95vh; max-height: 95vh; }
+}
+
+/* Compact frame: chat owns vertical scrolling; the composer stays accessible. */
+#student-buddy-panel, #student-buddy-panel * { box-sizing: border-box; }
+.sb-panel { width: min(500px, calc(100vw - 24px)); height: min(92dvh, 860px); max-height: calc(100dvh - 24px); min-width: min(300px, calc(100vw - 24px)); min-height: min(480px, calc(100dvh - 24px)); resize: vertical; }
+.sb-header { min-height: 46px; padding: 7px 12px; flex-shrink: 0; gap: 8px; }
+.sb-header-actions { display: flex; align-items: center; gap: 8px; }
+.sb-reading-toggle, .sb-account-button, .sb-latest-button { border: 1px solid #64ffda66; background: #163542; color: #9fffe5; border-radius: 7px; padding: 7px 10px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.sb-reading-toggle:focus-visible, .sb-account-button:focus-visible, .sb-latest-button:focus-visible { outline: 2px solid #64ffda; outline-offset: 2px; }
+.sb-account-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; background: #0f172a; color: #cbd5e1; font-size: 12px; flex-shrink: 0; }
+#sb-account-label { overflow-wrap: anywhere; min-width: 0; }
+.sb-content { min-height: 0; overflow: hidden; max-height: none; }
+.sb-welcome { padding: 8px 12px; }
+.sb-welcome-header { margin-bottom: 6px; }
+.sb-welcome-emoji { font-size: 20px; }
+.sb-welcome-text h2 { font-size: 14px; }
+.sb-welcome-text p { display: none; }
+.sb-problem-card { padding: 0; margin: 0; background: transparent; border: 0; }
+.sb-problem-label { display: none; }
+.sb-problem-title { margin-bottom: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-language-selector { gap: 8px; font-size: 12px; color: #cbd5e1; }
+.sb-language-dropdown { font-size: 12px; padding: 5px 8px; }
+.sb-progress-tracker { margin-top: 6px; padding: 0; border: 0; background: transparent; }
+.sb-progress-bar { height: 3px; margin-bottom: 3px; }
+.sb-progress-text { text-align: left; font-size: 10px; }
+.sb-session-status { flex-shrink: 0; padding: 5px 12px; }
+.sb-chat { flex: 1 1 0; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; overflow-anchor: none; padding: 12px; }
+.sb-message-content { font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.sb-message-solution .sb-message-content { font-size: 14px; }
+.sb-heading { font-size: 16px; line-height: 1.5; }
+.sb-code-block { min-width: 0; max-width: 100%; }
+.sb-code-block pre { white-space: pre; overflow-x: auto; overflow-y: hidden; max-width: 100%; word-break: normal; overflow-wrap: normal; }
+.sb-code-block pre code { white-space: pre; font-size: 13px; tab-size: 4; }
+.sb-input-area { padding: 8px 12px; }
+.sb-input-area textarea { display: block; height: 48px; min-height: 40px; max-height: 90px; padding: 8px 10px; margin-bottom: 6px; }
+.sb-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.sb-hint-levels, .sb-session-controls, .sb-solution-section, #sb-retry-btn { grid-column: 1 / -1; }
+.sb-hint-btn { padding: 7px 5px; font-size: 11px; }
+#sb-chat-mode { margin: 0; min-width: 0; }
+.sb-send-btn { padding: 8px; font-size: 12px; }
+.sb-session-controls { margin: 0; }
+.sb-solution-section { padding: 0; margin: 0; }
+.sb-solution-divider { display: none; }
+.sb-solution-btn { padding: 8px; font-size: 12px; }
+.sb-latest-button { align-self: center; margin: 4px; flex-shrink: 0; }
+.sb-has-messages .sb-welcome-header, .sb-reading .sb-welcome-header, .sb-reading .sb-progress-tracker { display: none; }
+.sb-panel.sb-minimized { height: 60px !important; max-height: 60px !important; min-height: 60px; }
+.sb-panel.sb-minimized > :not(.sb-header) { display: none; }
+.sb-panel.sb-minimized .sb-header { height: 60px; }
+.sb-panel.sb-minimized .sb-reading-toggle { display: none; }
+@media (max-width: 540px) {
+  .sb-title { font-size: 13px; gap: 5px; }
+  .sb-title::before, .sb-icon { display: none; }
+  .sb-header-actions { gap: 4px; }
+  .sb-account-row { flex-wrap: wrap; }
+  .sb-message-content { padding: 10px; }
+}
+@media (max-height: 540px) {
+  .sb-welcome-header, .sb-progress-tracker { display: none; }
+  .sb-welcome { padding: 5px 12px; }
+  .sb-problem-card { display: flex; gap: 8px; align-items: center; }
+  .sb-problem-title { flex: 1; min-width: 0; margin: 0; }
+  .sb-input-area textarea { height: 40px; min-height: 36px; }
+  .sb-actions { gap: 4px; }
+  .sb-hint-btn, .sb-send-btn, .sb-solution-btn, .sb-session-controls .sb-action-btn { padding: 5px; font-size: 10px; }
 }

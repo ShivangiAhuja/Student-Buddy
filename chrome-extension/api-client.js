@@ -4,8 +4,8 @@
       const messages = {
         network: 'Backend unavailable or network disconnected. Start Django and retry.',
         timeout: 'The backend is taking too long. Retry the same request.',
-        auth_required: 'Log in using the Student Buddy extension popup.',
-        auth_expired: 'Your session expired. Log in again in the extension popup.',
+        auth_required: 'Log in using Login / Register in the Student Buddy panel.',
+        auth_expired: 'Your session expired. Use Login / Register to sign in again.',
         stale: 'The session changed. This response was discarded.',
         invalid: 'Invalid request. Check the fields, problem data, and message length.',
         credentials: 'Login failed. Check your username and password.',
