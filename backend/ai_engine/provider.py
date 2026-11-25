@@ -34,6 +34,10 @@ def parse_completion(result, allow_solution, hint_level=None):
             raise ValueError
         if not allow_solution and solution:
             raise ValueError
+        code_blocks = re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S)
+        if allow_solution and (not solution or not any(block.strip() for block in code_blocks)):
+            # A refusal/outline is not a completed solution and must not be saved as one.
+            raise ValueError
         if not allow_solution and re.search(
             r"(?m)^\s*(?:class\s+Solution\b|def\s+\w+\s*\(|(?:public\s+)?(?:static\s+)?(?:int|void)\s+\w+\s*\()", text,
         ):
@@ -73,7 +77,7 @@ def generate(messages, *, allow_solution=False, hint_level=None, model=None):
             "name": "mentor_response", "strict": True,
             "schema": {"type": "object", "properties": {
                 "response": {"type": "string"},
-                "contains_full_solution": {"type": "boolean"},
+                "contains_full_solution": {"type": "boolean", **({"enum": [True]} if allow_solution else {})},
             }, "required": ["response", "contains_full_solution"], "additionalProperties": False},
         }}
     # GPT-OSS uses include_reasoning, not reasoning_format. Do not send

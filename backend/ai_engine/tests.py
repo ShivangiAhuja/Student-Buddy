@@ -26,6 +26,7 @@ from problems.models import Problem
 from .errors import ProviderError
 from .models import ConversationLease, DailyUsage, MentorRequest
 from .provider import Completion, generate, parse_completion
+from .prompts import build_messages
 
 FAKE_KEY = "test-only-not-a-live-provider-key"
 
@@ -77,6 +78,18 @@ class MentorTests(TestCase):
         self.assertEqual(run.status, "succeeded")
         self.assertEqual(run.prompt_tokens, 25)
         self.assertEqual(DailyUsage.objects.get().requests, 1)
+
+    def test_explicit_solution_policy_overrides_old_refusals_and_preserves_signature(self):
+        append_message(conversation_id=self.conversation.pk, owner=self.user, role="assistant", content="I cannot provide a full solution.")
+        for mode in [{"hint_level": 4}, {"action": "solution"}]:
+            messages = build_messages(self.conversation, self.user, {**mode, "user_thought": "Give full code", "code": "class Solution: pass"})
+            policy = messages[0]["content"]
+            self.assertIn("Full solution mode is explicitly authorized", policy)
+            self.assertIn("Preserve the supplied LeetCode class and function signature", policy)
+            self.assertNotIn("never provide a complete solution", policy)
+            self.assertIn("class Solution", messages[-1]["content"])
+        messages = build_messages(self.conversation, self.user, {"hint_level": 1, "user_thought": "Full code please", "code": ""})
+        self.assertIn("never provide a complete solution", messages[0]["content"])
 
     def test_all_four_hint_policies_and_explicit_solution_permission(self):
         for level, marker in [(1, "Conceptual guidance"), (2, "algorithms and data structures"), (3, "pseudocode"), (4, "complete code")]:
@@ -345,6 +358,23 @@ class ProviderTests(TestCase):
             self.assertNotIn(FAKE_KEY, str(caught.exception))
             self.assertEqual(create.call_count, 1)
 
+    def test_explicit_solution_schema_requires_true_without_forcing_hint_flags_false(self):
+        with patch("ai_engine.provider.Groq") as groq:
+            create = groq.return_value.__enter__.return_value.chat.completions.create
+            create.return_value = provider_result("```cpp\nclass Solution {};\n```\nExplanation. Time O(1), space O(1).", True)
+            generate([], allow_solution=True)
+            flag = create.call_args.kwargs["response_format"]["json_schema"]["schema"]["properties"]["contains_full_solution"]
+            self.assertEqual(flag["enum"], [True])
+            create.return_value = provider_result()
+            generate([], allow_solution=False)
+            flag = create.call_args.kwargs["response_format"]["json_schema"]["schema"]["properties"]["contains_full_solution"]
+            self.assertNotIn("enum", flag)
+
+    def test_solution_mode_rejects_refusal_and_outline_instead_of_saving_success(self):
+        for text, flag in [("I cannot provide a complete solution.", False), ("Here is an outline.", True), ("```python\npass\n```", False)]:
+            with self.subTest(text=text), self.assertRaises(ProviderError):
+                parse_completion(provider_result(text, flag), True, 4)
+
     def test_gpt_oss_uses_strict_schema_and_other_models_keep_json_mode(self):
         with patch("ai_engine.provider.Groq") as groq:
             create = groq.return_value.__enter__.return_value.chat.completions.create
@@ -425,7 +455,7 @@ class ProviderTests(TestCase):
             with self.assertRaises(ProviderError):
                 parse_completion(provider_result("```python\nprint(1)\n```"), False, level)
         self.assertEqual(parse_completion(provider_result("```pseudocode\nLOOK UP complement\n```"), False, 3).text[:3], "```")
-        self.assertEqual(parse_completion(provider_result("Complete code", True), True, 4).text, "Complete code")
+        self.assertIn("return", parse_completion(provider_result("```python\ndef solve():\n    return 1\n```\nExplanation. Time O(1), space O(1).", True), True, 4).text)
         with self.assertRaises(ProviderError):
             parse_completion(provider_result("def twoSum(nums, target):\n    return []"), False, 1)
 
