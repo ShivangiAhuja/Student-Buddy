@@ -488,3 +488,12 @@ The backend suite includes a loopback HTTP test using the real extension worker 
 A pre-move copy of the extension, README, and ignore file is stored in `.local-backups/`, which Git ignores. Git also preserves the committed pre-move source. No commit or push was made during Phase 0.
 
 `.env` and `.env.*` are ignored; `.env.example` is allowed. Future environment examples must contain placeholders only. Virtual environments, Python bytecode, and local SQLite databases are ignored.
+
+
+### Contextual JSON-generation failures
+
+The provider uses strict `json_schema` output for GPT-OSS 120B/20B, retaining the existing response/contains_full_solution contract and all local validation. Other models retain JSON object mode. See [Groq structured outputs](https://console.groq.com/docs/structured-outputs).
+
+A Groq HTTP 400 `json_validate_failed` is a formatting failure, not an unavailable model. Only explicit model errors (or 404) map to model_unavailable. Raw provider bodies, generated failures, prompts and secrets are never sent to clients or logged. Even strict output can be rejected upstream in live requests: the backend retries a definitive HTTP 400 JSON-generation rejection **once**, with the same prompt/options, within the same logical usage reservation. SDK retries remain disabled. There is no automatic retry for timeouts, network errors, rate limits, credentials, unavailable models, or rejected local safety checks. One logical request can therefore incur up to two provider calls and additional latency/token cost; bounded by two SDK timeouts rather than one. A client timeout still requires retrying the same UUID to recover the result safely. No partial output is persisted.
+
+Defaults and `.env.example` now use `GROQ_REASONING_EFFORT=medium` and `GROQ_MAX_COMPLETION_TOKENS=4096`. Update an existing ignored `.env` and restart Django for these values to take effect. A failed UUID replays its saved failure: send a new logical question to try again after configuration fixes. Approach feedback does not authorize a full solution; use the explicit complete-solution control.

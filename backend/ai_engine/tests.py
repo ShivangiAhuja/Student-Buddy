@@ -273,7 +273,7 @@ class ProviderTests(TestCase):
         with patch.dict(os.environ, environment, clear=True), patch("dotenv.load_dotenv"):
             configured = runpy.run_path(str(settings_path))
             self.assertEqual(configured["GROQ_MODEL"], "openai/gpt-oss-120b")
-            self.assertEqual(configured["GROQ_REASONING_EFFORT"], "low")
+            self.assertEqual(configured["GROQ_REASONING_EFFORT"], "medium")
             os.environ["GROQ_MODEL"] = " openai/gpt-oss-20b "
             os.environ["GROQ_REASONING_EFFORT"] = "HIGH"
             configured = runpy.run_path(str(settings_path))
@@ -291,7 +291,7 @@ class ProviderTests(TestCase):
             self.assertEqual(completion.text, "Consider the complement.")
             self.assertEqual(groq.call_args.kwargs["max_retries"], 0)
             self.assertEqual(groq.call_args.kwargs["api_key"], FAKE_KEY)
-            self.assertEqual(client.chat.completions.create.call_args.kwargs["response_format"], {"type": "json_object"})
+            self.assertEqual(client.chat.completions.create.call_args.kwargs["response_format"]["type"], "json_schema")
 
     @override_settings(GROQ_MODEL="openai/gpt-oss-120b", GROQ_REASONING_EFFORT="low", GROQ_MAX_COMPLETION_TOKENS=4096)
     def test_configured_gpt_oss_model_and_reasoning_options_reach_sdk(self):
@@ -305,7 +305,7 @@ class ProviderTests(TestCase):
             self.assertIs(options["include_reasoning"], False)
             self.assertNotIn("reasoning_format", options)
             self.assertEqual(options["max_completion_tokens"], 4096)
-            self.assertEqual(options["response_format"], {"type": "json_object"})
+            self.assertEqual(options["response_format"]["type"], "json_schema")
 
     @override_settings(GROQ_MODEL="openai/gpt-oss-120b", GROQ_REASONING_EFFORT="medium")
     def test_reserved_model_override_controls_model_specific_options(self):
@@ -345,6 +345,49 @@ class ProviderTests(TestCase):
             self.assertNotIn(FAKE_KEY, str(caught.exception))
             self.assertEqual(create.call_count, 1)
 
+    def test_gpt_oss_uses_strict_schema_and_other_models_keep_json_mode(self):
+        with patch("ai_engine.provider.Groq") as groq:
+            create = groq.return_value.__enter__.return_value.chat.completions.create
+            create.return_value = provider_result()
+            for model in ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+                generate([], model=model)
+                format = create.call_args.kwargs["response_format"]
+                self.assertEqual(format["type"], "json_schema")
+                schema = format["json_schema"]
+                self.assertTrue(schema["strict"])
+                self.assertFalse(schema["schema"]["additionalProperties"])
+                self.assertEqual(set(schema["schema"]["required"]), {"response", "contains_full_solution"})
+            generate([], model="other-model")
+            self.assertEqual(create.call_args.kwargs["response_format"], {"type": "json_object"})
+
+    def test_json_validation_failure_is_not_model_unavailability(self):
+        request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+        for body, expected in [
+            ({"error": {"code": "json_validate_failed", "failed_generation": FAKE_KEY}}, "invalid_response"),
+            ({"error": {"code": "model_not_found"}}, "model_unavailable"),
+            ({"code": "model_decommissioned"}, "model_unavailable"),
+            (None, "invalid_response"),
+        ]:
+            with self.subTest(expected=expected), patch("ai_engine.provider.Groq") as groq:
+                create = groq.return_value.__enter__.return_value.chat.completions.create
+                create.side_effect = APIStatusError(FAKE_KEY, response=httpx.Response(400, request=request), body=body)
+                with self.assertRaises(ProviderError) as caught:
+                    generate([])
+                self.assertEqual(caught.exception.code, expected)
+                self.assertNotIn(FAKE_KEY, str(caught.exception))
+                self.assertEqual(create.call_count, 2 if expected == "invalid_response" and isinstance(body, dict) and "error" in body else 1)
+
+    def test_json_generation_rejection_retries_once_without_persisting_partial_output(self):
+        request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+        error = APIStatusError("private provider details", response=httpx.Response(400, request=request),
+                               body={"error": {"code": "json_validate_failed"}})
+        with patch("ai_engine.provider.Groq") as groq:
+            create = groq.return_value.__enter__.return_value.chat.completions.create
+            create.side_effect = [error, provider_result()]
+            self.assertEqual(generate([]).text, "Consider the complement.")
+            self.assertEqual(create.call_count, 2)
+            self.assertEqual(create.call_args_list[0], create.call_args_list[1])
+
     def test_timeouts_network_http_and_model_errors_are_sanitized(self):
         request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
         errors = [(APITimeoutError(request=request), "provider_timeout"),
@@ -352,7 +395,7 @@ class ProviderTests(TestCase):
         for status in [400, 401, 403, 404, 422, 429, 500, 503]:
             response = httpx.Response(status, request=request)
             cls = RateLimitError if status == 429 else APIStatusError
-            code = "provider_rate_limit" if status == 429 else "model_unavailable" if status in {400, 404, 422} else "provider_unavailable"
+            code = "provider_rate_limit" if status == 429 else "model_unavailable" if status == 404 else "invalid_response" if status in {400, 422} else "provider_unavailable"
             errors.append((cls(FAKE_KEY, response=response, body={"secret": FAKE_KEY}), code))
         errors.append((ValueError(FAKE_KEY), "invalid_response"))
         for error, code in errors:

@@ -57,22 +57,48 @@ def parse_completion(result, allow_solution, hint_level=None):
         raise ProviderError("invalid_response") from None
 
 
+def provider_error_code(exc):
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body.get("error", body)
+    return error.get("code") if isinstance(error, dict) else None
+
+
 def generate(messages, *, allow_solution=False, hint_level=None, model=None):
     selected_model = model or settings.GROQ_MODEL
+    gpt_oss = selected_model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"}
+    response_format = {"type": "json_object"}
+    if gpt_oss:
+        # Constrained decoding avoids JSON-mode validation failures on longer turns.
+        response_format = {"type": "json_schema", "json_schema": {
+            "name": "mentor_response", "strict": True,
+            "schema": {"type": "object", "properties": {
+                "response": {"type": "string"},
+                "contains_full_solution": {"type": "boolean"},
+            }, "required": ["response", "contains_full_solution"], "additionalProperties": False},
+        }}
     # GPT-OSS uses include_reasoning, not reasoning_format. Do not send
     # model-specific options to unrelated configurable models.
     reasoning_options = {
         "include_reasoning": False,
         "reasoning_effort": settings.GROQ_REASONING_EFFORT,
-    } if selected_model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"} else {}
+    } if gpt_oss else {}
     try:
         with Groq(api_key=settings.GROQ_API_KEY, timeout=settings.GROQ_TIMEOUT_SECONDS, max_retries=0) as client:
-            result = client.chat.completions.create(
-                model=selected_model, messages=messages,
-                temperature=0.3, max_completion_tokens=settings.GROQ_MAX_COMPLETION_TOKENS,
-                response_format={"type": "json_object"}, stream=False,
-                **reasoning_options,
-            )
+            for attempt in range(2):
+                try:
+                    result = client.chat.completions.create(
+                        model=selected_model, messages=messages,
+                        temperature=0.3, max_completion_tokens=settings.GROQ_MAX_COMPLETION_TOKENS,
+                        response_format=response_format, stream=False,
+                        **reasoning_options,
+                    )
+                    break
+                except APIStatusError as exc:
+                    # Only a definitive rejected JSON generation can be retried.
+                    # Never retry ambiguous network failures or failed safety checks.
+                    if attempt == 0 and exc.status_code == 400 and provider_error_code(exc) == "json_validate_failed":
+                        continue
+                    raise
         return parse_completion(result, allow_solution, hint_level)
     except APITimeoutError:
         raise ProviderError("provider_timeout") from None
@@ -81,7 +107,16 @@ def generate(messages, *, allow_solution=False, hint_level=None, model=None):
     except APIConnectionError:
         raise ProviderError("provider_unavailable") from None
     except APIStatusError as exc:
-        code = "model_unavailable" if exc.status_code in {400, 404, 422} else "provider_unavailable"
+        provider_code = provider_error_code(exc)
+        # Inspect only fixed categories; never return/log raw provider messages or output.
+        if provider_code in ("model_not_found", "model_decommissioned"):
+            code = "model_unavailable"
+        elif provider_code == "json_validate_failed" or exc.status_code in {400, 422}:
+            code = "invalid_response"
+        elif exc.status_code == 404:
+            code = "model_unavailable"
+        else:
+            code = "provider_unavailable"
         raise ProviderError(code) from None
     except ProviderError:
         raise

@@ -83,9 +83,9 @@ Add a real `GROQ_API_KEY` only to ignored `backend/.env` or a backend process en
 | --- | --- |
 | `GROQ_API_KEY` | Empty; required for real AI calls |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` |
-| `GROQ_REASONING_EFFORT` | `low`; accepts low/medium/high, sent only for GPT-OSS models |
+| `GROQ_REASONING_EFFORT` | `medium`; accepts low/medium/high, sent only for GPT-OSS models |
 | `GROQ_TIMEOUT_SECONDS` | 25 |
-| `GROQ_MAX_COMPLETION_TOKENS` | 2048 |
+| `GROQ_MAX_COMPLETION_TOKENS` | 4096 |
 | `AI_REQUEST_RATE` | 10/minute per user, shared across both endpoints |
 | `AI_DAILY_REQUEST_LIMIT` | 50 reserved attempts per user per UTC day |
 | `AI_MAX_PROMPT_CHARACTERS` | 60,000 |
@@ -94,13 +94,13 @@ Add a real `GROQ_API_KEY` only to ignored `backend/.env` or a backend process en
 
 The model is an environment setting, not client-selectable. Confirm your account's model permissions and current [Groq production models](https://console.groq.com/docs/models). The default supports JSON object mode. A replacement model must support chat completions, JSON object responses, and the configured token/temperature parameters. Changing model IDs does not automatically translate incompatible capabilities.
 
-For GPT-OSS 120B/20B, the client explicitly sends `include_reasoning=False` and the configured reasoning effort, without `reasoning_format` (unsupported for these models). Reasoning still consumes completion tokens even though it is excluded from the returned payload. The existing 2048 token default remains unchanged to avoid silently raising usage; if it truncates useful responses, explicitly choose a larger cap such as 4096 and evaluate latency against the extension timeout. Truncated output is never treated as a successful answer. These options are omitted for unrelated models. See [Groq's GPT-OSS reasoning documentation](https://console.groq.com/docs/reasoning).
+For GPT-OSS 120B/20B, the client explicitly sends `include_reasoning=False` and the configured reasoning effort, without `reasoning_format` (unsupported for these models). Reasoning still consumes completion tokens even though it is excluded from the returned payload. The default completion budget is 4096 with medium reasoning effort, giving contextual answers more room than the former 2048/low configuration; this can increase latency and provider token usage. Evaluate against the extension timeout. Truncated output is never treated as a successful answer. These options are omitted for unrelated models. See [Groq's GPT-OSS reasoning documentation](https://console.groq.com/docs/reasoning).
 
 ### Resolving old-model availability errors
 
 Groq's [deprecation notice](https://console.groq.com/docs/deprecations) lists August 16, 2026 for Llama 3.3 70B and recommends GPT-OSS 120B as a replacement. The current Django default already uses `openai/gpt-oss-120b`. A process environment variable overrides the saved `.env`; a server that has not restarted or an older extension installation may still use its old configuration.
 
-Save `GROQ_MODEL=openai/gpt-oss-120b` and optionally `GROQ_REASONING_EFFORT=low` in ignored `backend/.env`. Leave all credentials untouched. Stop Django with Ctrl+C. In that server's PowerShell terminal, clear an obsolete override and verify the effective model before restarting:
+Save `GROQ_MODEL=openai/gpt-oss-120b` and optionally `GROQ_REASONING_EFFORT=medium` in ignored `backend/.env`. Leave all credentials untouched. Stop Django with Ctrl+C. In that server's PowerShell terminal, clear an obsolete override and verify the effective model before restarting:
 
 ```powershell
 Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy\backend'
@@ -205,3 +205,12 @@ Model output is untrusted. Safe frontend rendering must remain in place. Problem
 PostgreSQL/high-load testing, token-aware budgeting, retries/backoff policy, per-account abuse controls, usage reporting, retention, and model-quality evaluations remain future work. The current synchronous API holds a web worker while waiting on Groq; it does not hold a database transaction. Existing authentication caveats (access tokens valid until expiry, email verification/MFA absent, cache throttles) still apply.
 
 Phase 6 should integrate extension JWT login/refresh/logout, preserve its mentor panel, route actions through these APIs, retain request UUIDs across retries, handle quota/conflict errors, and map current problem/language IDs consistently. Keep refresh tokens out of content scripts/page DOM. Remove legacy frontend Groq calls, host permissions, and stored keys only when the authenticated backend path replaces them. Configure HTTPS and narrowly scoped extension/backend access before production. No extension changes or deployment are part of Phase 5.
+
+
+### Contextual JSON-generation failures
+
+The provider uses strict `json_schema` output for GPT-OSS 120B/20B, retaining the existing response/contains_full_solution contract and all local validation. Other models retain JSON object mode. See [Groq structured outputs](https://console.groq.com/docs/structured-outputs).
+
+A Groq HTTP 400 `json_validate_failed` is a formatting failure, not an unavailable model. Only explicit model errors (or 404) map to model_unavailable. Raw provider bodies, generated failures, prompts and secrets are never sent to clients or logged. Even strict output can be rejected upstream in live requests: the backend retries a definitive HTTP 400 JSON-generation rejection **once**, with the same prompt/options, within the same logical usage reservation. SDK retries remain disabled. There is no automatic retry for timeouts, network errors, rate limits, credentials, unavailable models, or rejected local safety checks. One logical request can therefore incur up to two provider calls and additional latency/token cost; bounded by two SDK timeouts rather than one. A client timeout still requires retrying the same UUID to recover the result safely. No partial output is persisted.
+
+Defaults and `.env.example` now use `GROQ_REASONING_EFFORT=medium` and `GROQ_MAX_COMPLETION_TOKENS=4096`. Update an existing ignored `.env` and restart Django for these values to take effect. A failed UUID replays its saved failure: send a new logical question to try again after configuration fixes. Approach feedback does not authorize a full solution; use the explicit complete-solution control.
