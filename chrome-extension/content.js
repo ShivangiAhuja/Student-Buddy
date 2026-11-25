@@ -373,11 +373,14 @@ function createMentorPanel() {
         </select>
         <button class="sb-send-btn" id="sb-send-btn">Send Thought</button>
         <button class="sb-action-btn" id="sb-retry-btn" hidden>Retry request</button>
-        <div class="sb-session-controls">
+        <details class="sb-secondary-controls">
+          <summary>Conversation controls</summary>
+          <div class="sb-session-controls">
           <button class="sb-action-btn" id="sb-reload-btn">Reload history</button>
           <button class="sb-action-btn" id="sb-clear-btn">Clear panel</button>
           <button class="sb-action-btn" id="sb-new-btn">New conversation</button>
-        </div>
+          </div>
+        </details>
         
         <div class="sb-solution-section" id="sb-solution-section" style="display: none;">
           <div class="sb-solution-divider">

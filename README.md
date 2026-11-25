@@ -1,5 +1,38 @@
 # Student Buddy
 
+## Run a local demonstration
+
+This version runs on your computer: Django must stay running while Chrome uses the extension. Sharing the GitHub repository does not host the API.
+
+1. In VS Code, open the project folder and a PowerShell terminal. Start the backend:
+
+   ```powershell
+   Set-Location 'C:\Users\Shivangi Ahuja\Desktop\Student Buddy\backend'
+   .\.venv\Scripts\python.exe manage.py migrate
+   .\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+   ```
+
+   Keep this terminal running. Visit `http://127.0.0.1:8000/api/health/`; expect `status: ok`. The root `/` is not a dashboard and may return 404.
+
+2. Put real secrets only in ignored `backend/.env`, never `.env.example`. Set a valid `GROQ_API_KEY` and `GROQ_MODEL=openai/gpt-oss-120b`. Restart Django after environment changes. The first-time dependency and virtual-environment setup is documented below.
+3. In Chrome open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked**, and select this project's `chrome-extension` folder. If already installed, click **Reload** and refresh all LeetCode tabs.
+4. Open `https://leetcode.com/problems/two-sum/`. In the floating panel choose **Login / Register**. Register a disposable demo account, then log in through the extension-owned tab. Return to LeetCode; confirm the username appears. Reloading the extension clears session sign-in.
+5. Select Python. Try **First Hint**, submit `I think a hashmap can store numbers and their indices`, then try **Stronger Hint** and **Direct Nudge**. After three successful hints, explicitly choose **Show Complete Solution**.
+6. Use **Expand** to read the solution, scroll through explanation and complexity, and use **Copy Code**. Refresh LeetCode to demonstrate persisted history. Under **Conversation controls**, **Clear panel** clears only the display; **Reload history** restores it; **New conversation** starts a separate thread.
+7. Show the architecture: Chrome panel ? trusted extension worker ? JWT-protected Django API ? bounded saved context ? Groq ? saved user/assistant messages. Provider keys stay on Django; the extension never calls Groq directly.
+
+For someone watching remotely, screen-share this local demonstration. Someone running their own copy needs Python, Node for tests, their own private environment configuration/Groq credential, migrations, and the unpacked extension. Public hosting and Chrome Web Store publishing are future steps; this local URL is not accessible on someone else's computer.
+
+Verification from the project root:
+
+```powershell
+node --test tests/extension.test.cjs tests/extension-integration.test.cjs
+Set-Location .\backend
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test
+```
+
+
 Student Buddy is an existing Manifest V3 Chrome extension that provides AI coding guidance on LeetCode. It is being upgraded incrementally into a full-stack coding mentor.
 
 ## Current status
@@ -424,7 +457,7 @@ Phase 7 should complete the documented browser/live-provider checks, fix any Lee
 
 The floating panel now includes **Login / Register**, username display, and **Log out**. Login opens the extension-owned `auth.html` tab and reuses the popup's authentication code; no password field is embedded in LeetCode. Successful login updates open panels automatically. The toolbar popup remains available as an alternative.
 
-The panel opens at up to 500px wide and 92% viewport height (capped at 860px). **Expand** uses up to 960px and most of the viewport; **Collapse** restores the earlier size. Drag the bottom-right resize handle to adjust height. Chat is the only main vertical scrolling region; code blocks scroll horizontally. New responses follow automatically until you scroll up, when **Jump to latest response** becomes available. The language selector now has one clear label instead of a duplicate badge. See [panel usability notes and manual checks](docs/panel-auth-reading.md).
+The panel opens at up to 500px wide and 92% viewport height (capped at 860px). **Expand** uses up to 960px and most of the viewport; **Collapse** restores the earlier size. Drag the bottom-right resize handle to adjust height. Chat is the only main vertical scrolling region; code blocks scroll horizontally. New responses follow automatically until you scroll up, when **Jump to latest response** becomes available. The language selector now has one clear label instead of a duplicate badge. See [panel usability notes and manual checks](docs/panel-auth-reading.md). The panel and content now allocate height using explicit grid rows; desktop resizing stops at 620px to preserve reading space, and secondary history actions live under **Conversation controls**. Real Chrome fixture measurements and the browser regression command (`node tests/browser-layout.cjs`, Node 22+) are documented in those notes.
 
 The popup handles registration/login/logout and displays the current username. The background worker owns JWTs, refresh rotation, HTTP requests, conversation mappings, and retry UUIDs. Content scripts handle only problem extraction and the existing floating UI. Backend APIs and schemas are unchanged. See [Phase 6 architecture, storage decisions, and manual checklist](docs/phase-6-extension-integration.md).
 
