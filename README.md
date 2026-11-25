@@ -1,5 +1,100 @@
 # Student Buddy
 
+An AI coding mentor for LeetCode: a Manifest V3 Chrome extension backed by Django REST Framework, JWT authentication, persistent conversations, and backend-only Groq integration.
+
+**Release status: local MVP / pre-release.** There is currently no public hosted backend or Chrome Web Store installation link. The checked-in extension connects to `http://127.0.0.1:8000`; cloning this repository does not deploy the service. Users currently need a local backend and their own private Groq configuration. The hosted version will let users sign up without supplying provider keys.
+
+- [How to install and use it now](#install-and-use-student-buddy-now)
+- [Local demonstration](#run-a-local-demonstration)
+- [Backend setup in PowerShell](#run-the-backend-separately-windows-powershell)
+- [Public-release work remaining](#public-release-work-remaining)
+- [Extension integration details](#extension-integration-phase-6)
+
+## Install and use Student Buddy now
+
+### First-time installation on Windows
+
+Install Git, Python (the backend uses Django 5.2, which requires a supported Python version), and Google Chrome. Node is needed for extension/contract tests; the separate browser-layout script requires Node 22+.
+
+In PowerShell, choose a folder where you keep projects, then run:
+
+```powershell
+git clone https://github.com/ShivangiAhuja/Student-Buddy.git
+Set-Location .\Student-Buddy\backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+if (-not (Test-Path -LiteralPath .env)) {
+    Copy-Item -LiteralPath .env.example -Destination .env
+    .\.venv\Scripts\python.exe -c "import secrets; from pathlib import Path; p = Path('.env'); p.write_text(p.read_text(encoding='utf-8').replace('replace-with-a-generated-secret-key', secrets.token_urlsafe(64)).replace('replace-with-a-generated-jwt-signing-key', secrets.token_urlsafe(64)), encoding='utf-8')"
+}
+```
+
+Privately edit **`backend/.env`**, not `.env.example`: set your real `GROQ_API_KEY`. `GROQ_MODEL` is configurable; the default is `openai/gpt-oss-120b`, while `openai/gpt-oss-20b` is the tested local workaround for intermittent 120B JSON failures. Account availability can vary. Keep `GROQ_REASONING_EFFORT=medium` and `GROQ_MAX_COMPLETION_TOKENS=4096` initially. Keep `DJANGO_DEBUG=true` only for local development. No secret is needed in any extension file. Do not share your `.env` or commit it.
+
+From the same `backend` directory:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
+
+Leave the server running. Open `http://127.0.0.1:8000/api/health/`; expect `{"status":"ok","service":"student-buddy-backend"}`. The root `/` is not a dashboard. Restart Django after `.env` changes. Returning users only need to start the server; do not overwrite existing private settings or regenerate secrets each time.
+
+### Use the extension
+
+1. Open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked**, and select the cloned project's **`chrome-extension`** folder (the folder containing `manifest.json`). For an existing installation, click **Reload**, then refresh every open LeetCode tab.
+2. Open a LeetCode problem such as [Two Sum](https://leetcode.com/problems/two-sum/). The Student Buddy floating panel appears.
+3. Click **Login / Register** in the panel. An extension-owned authentication tab opens. Register a username/email/password, then log in. Return to LeetCode; your username should appear without a manual refresh. Registration is for Student Buddy, not your LeetCode credentials.
+4. Check the selected programming language. Use **First Hint**, **Stronger Hint**, and **Direct Nudge** for increasing guidance. You can also type your reasoning and choose **Send Thought**.
+5. Use the action dropdown for approach feedback, debugging, or explanation. These modes do not request complete solutions.
+6. After three successful hint requests, click **Show Complete Solution** and confirm to request full code, explanation and time/space complexity. It asks the model to preserve the supplied class/function signature. Review and test generated code on LeetCode; outputs are not guaranteed correct.
+7. Use **Expand/Collapse**, vertical resizing and the chat scrollbar for long answers. **Copy Code** copies a code block. Scrolling up pauses auto-follow; **Jump to latest response** resumes it.
+8. Under **Conversation controls**, **Clear panel** clears the visible display, **Reload history** retrieves saved messages, and **New conversation** starts a separate thread without deleting the earlier one. Keep the same account, problem and language to recover the matching history after page refresh.
+9. **Log out** ends the local session. Reloading the extension or closing the browser also clears session-only authentication; log in again when needed.
+
+### Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| Backend unavailable | Start Django and check `/api/health/`. Keep the terminal running. |
+| Model unavailable / provider failure | Check the private backend key and model availability; restart after configuration changes. Keys never belong in Chrome. |
+| Unusable response or unexpected refusal | Send a new logical action after a backend fix; old saved answers are not regenerated by refresh. Use the explicit solution button for full code. Some provider outputs still fail validation. |
+| Request timed out | Keep the same pending retry action/UUID to recover an uncertain result; do not repeatedly click Send and create duplicate billable attempts. |
+| Daily limit reached | Quotas are persisted and reset at midnight UTC; restarting Django does not reset them. |
+| Changes do not appear | Reload the extension at `chrome://extensions/`, then refresh the LeetCode tab. |
+
+## Public release work remaining
+
+The main learning workflow exists, but this repository is not yet production-ready. Last implementation verification: **87 backend tests and 45 extension tests passed**; mocked tests do not prove AI correctness. Selected live Groq responses and an offline Chrome layout fixture were checked, not a complete production browser release.
+
+| Area | Current source | Needed before public launch |
+| --- | --- | --- |
+| Public API | Loopback URL only | Deploy Django behind HTTPS and verify the production health/auth/mentor endpoints. |
+| Server/database | Django development server and SQLite; PostgreSQL settings path exists | Add a production WSGI server and PostgreSQL driver, provision PostgreSQL, run migrations and test concurrency/backups/restores. No deployment manifest or production server dependency exists yet. |
+| Production security | Environment secrets and JWT ownership checks exist | Set `DJANGO_DEBUG=false`, exact hosts, trusted proxy settings and HTTPS redirect/secure-cookie/HSTS policy appropriate to the host; run `manage.py check --deploy` against real production settings. |
+| Abuse and spending | Persisted per-account daily quotas; per-process cache throttles | Shared throttling cache, appropriate proxy/client-IP handling, global provider spending limits, signup-abuse controls and monitoring. Per-account quotas alone do not bound costs from many accounts. |
+| AI reliability | Structured output and one bounded JSON-failure retry | Evaluate hints, solutions/signatures and failures across representative problems/languages; align the 28-second extension timeout with up to two 25-second provider calls, server deadlines and request leases. |
+| Extension release | Unpacked local development build | Configure the exact hosted HTTPS origin in `config.js`, manifest host permissions and CSP together; verify in a clean Chrome profile and package a reviewed release. No wildcard permission/CORS shortcut is required. |
+| User support/data | Registration/login/history exist; account recovery/deletion flows absent | Provide an accurate privacy policy, support contact and clear retention/deletion procedure; plan password reset and practical account support before a broad release. |
+| Store distribution | No published listing | Prepare screenshots, permission/data-use disclosures, privacy-policy URL, store account and review submission. |
+
+A local `manage.py check --deploy` currently reports five warnings (debug, HTTPS redirect, HSTS, and two secure-cookie settings). These reflect the local configuration; production must be configured and checked separately. Do not publish `runserver` or an ephemeral SQLite file as the production service.
+
+### Selected deployment: Render + Render PostgreSQL
+
+Render with managed Render PostgreSQL is the selected first-hosting setup. Deployment configuration and provisioning are still pending; this section is a release plan, not evidence of a deployed service.
+
+1. Prepare production dependencies/settings and a repeatable deployment configuration, while keeping local development working.
+2. Provision a Django web service and managed PostgreSQL. **Render + Render PostgreSQL** is the selected setup and keeps the first release on one platform; see [Render's Django deployment guide](https://render.com/docs/deploy-django). Render + Neon or Railway are alternatives, not extra requirements. Review current costs and limits before provisioning; no paid resource has been created by this repository update.
+3. Configure independent production Django/JWT secrets, Groq credentials/model, database settings, exact hostnames, quotas, proxy trust and HTTPS privately in the host dashboard. Do not copy development secrets into a public file.
+4. Run migrations, configure the production process, shared cache, backups and health checks, then test authentication, ownership, AI failure recovery and spend controls against HTTPS. A database alone does not migrate existing SQLite data automatically.
+5. Build the extension for that exact HTTPS API origin, then test registration, all hint levels, explicit solutions, history recovery and logout from another computer/profile. End users of the hosted build should not run Django or supply Groq credentials.
+6. Start with a small controlled beta. Resolve production failures before publishing broadly.
+7. Publish through the Chrome Web Store after preparing accurate disclosures. Chrome requires an accessible privacy policy for extensions handling user data; see [the official privacy-policy requirements](https://developer.chrome.com/docs/webstore/program-policies/privacy). Explain that problem text, submitted thoughts/code and bounded conversation context are sent to the backend and Groq, and describe storage, retention and deletion accurately.
+8. Add the real store link and hosted service/support details to this README only after they are available. Until then, the local installation steps above are the supported path.
+
+
 ## Run a local demonstration
 
 This version runs on your computer: Django must stay running while Chrome uses the extension. Sharing the GitHub repository does not host the API.
@@ -14,12 +109,12 @@ This version runs on your computer: Django must stay running while Chrome uses t
 
    Keep this terminal running. Visit `http://127.0.0.1:8000/api/health/`; expect `status: ok`. The root `/` is not a dashboard and may return 404.
 
-2. Put real secrets only in ignored `backend/.env`, never `.env.example`. Set a valid `GROQ_API_KEY` and `GROQ_MODEL=openai/gpt-oss-120b`. Restart Django after environment changes. The first-time dependency and virtual-environment setup is documented below.
+2. Put real secrets only in ignored `backend/.env`, never `.env.example`. Set a valid `GROQ_API_KEY` and an available `GROQ_MODEL` (see the model notes above). Restart Django after environment changes. The first-time dependency and virtual-environment setup is documented below.
 3. In Chrome open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked**, and select this project's `chrome-extension` folder. If already installed, click **Reload** and refresh all LeetCode tabs.
 4. Open `https://leetcode.com/problems/two-sum/`. In the floating panel choose **Login / Register**. Register a disposable demo account, then log in through the extension-owned tab. Return to LeetCode; confirm the username appears. Reloading the extension clears session sign-in.
 5. Select Python. Try **First Hint**, submit `I think a hashmap can store numbers and their indices`, then try **Stronger Hint** and **Direct Nudge**. After three successful hints, explicitly choose **Show Complete Solution**.
 6. Use **Expand** to read the solution, scroll through explanation and complexity, and use **Copy Code**. Refresh LeetCode to demonstrate persisted history. Under **Conversation controls**, **Clear panel** clears only the display; **Reload history** restores it; **New conversation** starts a separate thread.
-7. Show the architecture: Chrome panel ? trusted extension worker ? JWT-protected Django API ? bounded saved context ? Groq ? saved user/assistant messages. Provider keys stay on Django; the extension never calls Groq directly.
+7. Show the architecture: Chrome panel -> trusted extension worker -> JWT-protected Django API -> bounded saved context -> Groq -> saved user/assistant messages. Provider keys stay on Django; the extension never calls Groq directly.
 
 For someone watching remotely, screen-share this local demonstration. Someone running their own copy needs Python, Node for tests, their own private environment configuration/Groq credential, migrations, and the unpacked extension. Public hosting and Chrome Web Store publishing are future steps; this local URL is not accessible on someone else's computer.
 
