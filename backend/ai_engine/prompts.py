@@ -9,7 +9,7 @@ from .serializers import user_message
 LEVELS = {
     1: "Conceptual guidance: ask a focused question; do not reveal the algorithm or code.",
     2: "Suggest relevant algorithms and data structures with reasons. No code or complete solution.",
-    3: "Explain the approach and pseudocode. No complete executable solution. Label fences pseudocode.",
+    3: "Explain the approach using language-neutral pseudocode. No executable code or programming-language function/class definitions. If a fence is needed, label it pseudocode.",
     4: "Explicit solution request: provide complete code, explanation, time complexity and space complexity.",
 }
 
